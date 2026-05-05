@@ -148,3 +148,5 @@ ehthumbs.db
 data/
 data/tmp_results/
 data/public/
+
+*.csv
