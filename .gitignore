@@ -150,3 +150,10 @@ data/tmp_results/
 data/public/
 
 *.csv
+
+*.pkl
+models/
+data/
+notebooks/*.ipynb_checkpoints
+*.joblib
+notebooks/*.pkl
