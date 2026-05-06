@@ -1,24 +1,20 @@
 """
 GP Regression: Within-Period xGoal Dynamics in Comeback Situations
 ===================================================================
-Follows decomposition_analysis.py — run that script first to confirm
-your data loads correctly, then run this script.
+REVISED: Accounts for era heterogeneity (2014-20 vs 2022-24)
 
-Training:   seasons 2014-2015 to 2023-2024
-Validation:  season 2024-25
+Core insight from decomposition:
+  - 2014-20 (early era): mean xGoal ~0.062 per shot
+  - 2022-24 (recent era): mean xGoal ~0.072 per shot (+16% shift)
 
-What this script produces
--------------------------
-  gp_bin_data_train.csv       Binned training data fed to the GP
-  gp_bin_data_valid.csv       Binned validation data
-  gp_results.csv              GP posterior mean + CI at fine grid
-  exponential_test.csv        Exponential fit vs GP CI, pointwise
-  fig6_gp_posterior.png       GP posterior + training bin means
-  fig7_exponential_overlay.png GP posterior + exponential fit
-  fig8_validation_gp.png      Validation bins vs training posterior
-  fig9_semilog.png            Semi-log plot (exponential appears linear if fit holds)
+This script fits TWO GPs:
+  1. Early era (2014-20): Baseline temporal dynamics
+  2. Recent era (2022-24): Elevated temporal dynamics
 
-Dependencies: pandas, numpy, matplotlib, scipy, scikit-learn
+Then validates both against 2024-25 to test whether trend continues.
+
+Question: Are the shapes the same but levels different?
+Or did the temporal dynamics themselves change?
 """
 
 import os
@@ -32,11 +28,9 @@ from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
 from pathlib import Path
 import sys
 
-# Find project root dynamically
 ROOT = Path(__file__).resolve().parent
 while not (ROOT / "src").exists():
     ROOT = ROOT.parent
-
 sys.path.append(str(ROOT))
 
 from src.paths import DATA_DIR, RESULTS_DIR
@@ -53,27 +47,27 @@ plt.rcParams.update({
     "figure.dpi": 150,
 })
 
-# ── 0. Configuration ──────────────────────────────────────────────────────────
+# ── Configuration ─────────────────────────────────────────────────────────────
 
 SEASONS = {
-    DATA_DIR / "shots_2014.csv": {"label": "2014-15", "role": "train"},
-    DATA_DIR / "shots_2015.csv": {"label": "2015-16", "role": "train"},
-    DATA_DIR / "shots_2016.csv": {"label": "2016-17", "role": "train"},
-    DATA_DIR / "shots_2017.csv": {"label": "2017-18", "role": "train"},
-    DATA_DIR / "shots_2018.csv": {"label": "2018-19", "role": "train"},
-    DATA_DIR / "shots_2019.csv": {"label": "2019-20", "role": "train"},
-    DATA_DIR / "shots_2020.csv": {"label": "2020-21", "role": "train"},
-    DATA_DIR / "shots_2021.csv": {"label": "2021-22", "role": "train"},
-    DATA_DIR / "shots_2022.csv": {"label": "2022-23", "role": "train"},
-    DATA_DIR / "shots_2023.csv": {"label": "2023-24", "role": "train"},
-    DATA_DIR / "shots_2024.csv": {"label": "2024-25", "role": "validate"},
+    DATA_DIR / "shots_2014.csv": {"label": "2014-15", "era": "early"},
+    DATA_DIR / "shots_2015.csv": {"label": "2015-16", "era": "early"},
+    DATA_DIR / "shots_2016.csv": {"label": "2016-17", "era": "early"},
+    DATA_DIR / "shots_2017.csv": {"label": "2017-18", "era": "early"},
+    DATA_DIR / "shots_2018.csv": {"label": "2018-19", "era": "early"},
+    DATA_DIR / "shots_2019.csv": {"label": "2019-20", "era": "early"},
+    DATA_DIR / "shots_2020.csv": {"label": "2020-21", "era": "early"},   # Include COVID for continuity
+    DATA_DIR / "shots_2021.csv": {"label": "2021-22", "era": "early"},
+    DATA_DIR / "shots_2022.csv": {"label": "2022-23", "era": "recent"},
+    DATA_DIR / "shots_2023.csv": {"label": "2023-24", "era": "recent"},
+    DATA_DIR / "shots_2024.csv": {"label": "2024-25", "era": "validate"},
 }
 
-PULL_CUTOFF = 1110      # seconds into period; exclude goalie-pull epoch
-BIN_SIZE    = 60        # seconds per bin → 18 bins across 0–1110 s
-N_GRID      = 500       # points in the fine prediction grid
+PULL_CUTOFF = 1110
+BIN_SIZE    = 60
+N_GRID      = 500
 
-# ── 1. Load & Filter (same logic as decomposition script) ────────────────────
+# ── Load & Filter ─────────────────────────────────────────────────────────────
 
 def load_and_filter(filepath, season_label):
     df = pd.read_csv(filepath)
@@ -99,37 +93,40 @@ def load_and_filter(filepath, season_label):
     return df3
 
 
-print("Loading data...")
+print("Loading data by era...\n")
 all_dfs = []
+era_counts = {"early": 0, "recent": 0, "validate": 0}
+
 for filepath, meta in SEASONS.items():
     if not filepath.exists():
-        print(f"  SKIPPING {filepath} — not found")
         continue
     df_s = load_and_filter(filepath, meta["label"])
-    df_s["role"] = meta["role"]
+    df_s["era"] = meta["era"]
     all_dfs.append(df_s)
-    print(f"  {meta['label']}: {len(df_s):,} shots")
+    era_counts[meta["era"]] += len(df_s)
+    print(f"  {meta['label']:12s} ({meta['era']:8s}): {len(df_s):5,} shots")
 
-full  = pd.concat(all_dfs, ignore_index=True)
-train = full[full["role"] == "train"].copy()
-valid = full[full["role"] == "validate"].copy()
-print(f"\nTraining: {len(train):,} shots | Validation: {len(valid):,} shots")
+full = pd.concat(all_dfs, ignore_index=True)
 
-# ── 2. Bin into 60-Second Windows ────────────────────────────────────────────
-# Each bin's mean xGoal is the GP observation.
-# Noise level alpha_i = variance_i / n_i (standard error squared).
-# This gives the GP heteroscedastic noise — bins with fewer shots
-# are treated as less certain observations.
+data_early    = full[full["era"] == "early"].copy()
+data_recent   = full[full["era"] == "recent"].copy()
+data_validate = full[full["era"] == "validate"].copy()
+
+print(f"\nEra breakdown:")
+print(f"  Early (2014-21):    {len(data_early):6,} shots")
+print(f"  Recent (2022-24):   {len(data_recent):6,} shots")
+print(f"  Validate (2024-25): {len(data_validate):6,} shots")
+
+# ── Binning Function ──────────────────────────────────────────────────────────
 
 bin_edges = np.arange(0, PULL_CUTOFF + BIN_SIZE, BIN_SIZE)
-
 
 def make_bins(df, label):
     df = df.copy()
     df["bin"] = pd.cut(
         df["time_in_period"],
         bins=bin_edges,
-        right=False,           # [left, right)
+        right=False,
         include_lowest=True,
     )
     agg = (
@@ -138,277 +135,247 @@ def make_bins(df, label):
         .reset_index()
     )
     agg["midpoint"]  = agg["bin"].apply(lambda b: (b.left + b.right) / 2).astype(float)
-    agg["se_sq"]     = agg["var_xG"] / agg["n"]   # variance of the mean
+    agg["se_sq"]     = agg["var_xG"] / agg["n"]
     agg["label"]     = label
-    # Drop bins with fewer than 10 shots (too noisy to be useful)
-    agg = agg[agg["n"] >= 10].copy()
+    agg = agg[agg["n"] >= 10].copy()  # Drop noisy bins
     return agg.reset_index(drop=True)
 
 
-bins_train = make_bins(train, "training")
-bins_valid = make_bins(valid, "validation")
+bins_early    = make_bins(data_early, "early")
+bins_recent   = make_bins(data_recent, "recent")
+bins_validate = make_bins(data_validate, "validate")
 
-print(f"\nTraining bins: {len(bins_train)}  |  Validation bins: {len(bins_valid)}")
-print(bins_train[["midpoint", "n", "mean_xG", "se_sq"]].to_string(index=False,
-      float_format="{:.5f}".format))
+print(f"\nBinned data:")
+print(f"  Early bins:    {len(bins_early):2d}  |  mean xGoal = {bins_early['mean_xG'].mean():.5f}")
+print(f"  Recent bins:   {len(bins_recent):2d}  |  mean xGoal = {bins_recent['mean_xG'].mean():.5f}")
+print(f"  Validate bins: {len(bins_validate):2d}  |  mean xGoal = {bins_validate['mean_xG'].mean():.5f}")
 
-bins_train.to_csv(RESULTS_DIR / "gp_bin_data_train.csv", index=False, float_format="%.6f")
-bins_valid.to_csv(RESULTS_DIR / "gp_bin_data_valid.csv", index=False, float_format="%.6f")
+# ── Fit Two GPs ───────────────────────────────────────────────────────────────
 
-# ── 3. Fit GP ─────────────────────────────────────────────────────────────────
-#
-# Kernel: ConstantKernel × Matérn(nu=2.5) + WhiteKernel
-#
-# ConstantKernel scales the overall amplitude of the GP.
-# Matérn(nu=2.5) is twice-differentiable — appropriate for a smooth
-# but non-analytic function. Rougher than RBF (infinitely smooth),
-# which is important because we don't want to over-smooth the window-4 spike.
-# WhiteKernel absorbs noise not captured by the heteroscedastic alpha.
-#
-# alpha: per-observation noise variance (our se_sq estimates).
-# normalize_y: centers the target on its mean, improving numerical stability.
+def fit_gp(bins_df, label):
+    """Fit GP to binned data."""
+    X = bins_df["midpoint"].values.reshape(-1, 1)
+    y = bins_df["mean_xG"].values
+    alpha = bins_df["se_sq"].values
 
-X_train = bins_train["midpoint"].values.reshape(-1, 1)
-y_train = bins_train["mean_xG"].values
-alpha   = bins_train["se_sq"].values   # heteroscedastic noise
-
-kernel = (
-    ConstantKernel(constant_value=0.01, constant_value_bounds=(1e-4, 10.0)) *
-    Matern(length_scale=200.0, length_scale_bounds=(30.0, 1000.0), nu=2.5) +
-    WhiteKernel(noise_level=1e-4, noise_level_bounds=(1e-6, 1.0))
-)
-
-gp = GaussianProcessRegressor(
-    kernel=kernel,
-    alpha=alpha,
-    n_restarts_optimizer=10,   # avoid local optima in marginal likelihood
-    normalize_y=True,
-    random_state=42,
-)
-
-print("\nFitting GP (this may take a few seconds)...")
-gp.fit(X_train, y_train)
-print(f"Optimised kernel: {gp.kernel_}")
-print(f"Log marginal likelihood: {gp.log_marginal_likelihood(gp.kernel_.theta):.3f}")
-
-# ── 4. Predict on Fine Grid ───────────────────────────────────────────────────
-
-t_grid  = np.linspace(0, PULL_CUTOFF, N_GRID).reshape(-1, 1)
-mu, std = gp.predict(t_grid, return_std=True)
-ci_lo   = mu - 1.96 * std
-ci_hi   = mu + 1.96 * std
-
-gp_results = pd.DataFrame({
-    "time_s":  t_grid.flatten(),
-    "mu":      mu,
-    "std":     std,
-    "ci_lo":   ci_lo,
-    "ci_hi":   ci_hi,
-})
-gp_results.to_csv(RESULTS_DIR / "gp_results.csv", index=False, float_format="%.6f")
-print("Saved: gp_results.csv")
-
-# ── 5. Exponential Fit & Consistency Test ────────────────────────────────────
-# Fit y = a * exp(b * t) to the bin means.
-# Then check pointwise whether the exponential falls inside the GP 95% CI.
-# We report the fraction of grid points where it falls outside.
-
-def exponential(t, a, b):
-    return a * np.exp(b * t)
-
-try:
-    popt, pcov = curve_fit(
-        exponential,
-        bins_train["midpoint"].values,
-        bins_train["mean_xG"].values,
-        p0=[0.06, 0.0005],
-        maxfev=5000,
+    kernel = (
+        ConstantKernel(constant_value=0.01, constant_value_bounds=(1e-4, 10.0)) *
+        Matern(length_scale=200.0, length_scale_bounds=(30.0, 1000.0), nu=2.5) +
+        WhiteKernel(noise_level=1e-4, noise_level_bounds=(1e-6, 1.0))
     )
-    a_fit, b_fit = popt
-    print(f"\nExponential fit: a={a_fit:.5f}, b={b_fit:.6f}")
-    print(f"  Implied doubling time: {np.log(2)/b_fit:.1f} seconds "
-          f"({np.log(2)/b_fit/60:.1f} minutes)")
 
-    exp_pred = exponential(t_grid.flatten(), a_fit, b_fit)
+    gp = GaussianProcessRegressor(
+        kernel=kernel,
+        alpha=alpha,
+        n_restarts_optimizer=10,
+        normalize_y=True,
+        random_state=42,
+    )
 
-    # Pointwise consistency: is exponential within GP 95% CI?
-    inside      = (exp_pred >= ci_lo) & (exp_pred <= ci_hi)
-    pct_inside  = inside.mean() * 100
+    print(f"\nFitting GP for {label} era...")
+    gp.fit(X, y)
+    print(f"  Kernel: {gp.kernel_}")
+    print(f"  Log marginal likelihood: {gp.log_marginal_likelihood(gp.kernel_.theta):.3f}")
 
-    print(f"  Exponential inside GP 95% CI: {pct_inside:.1f}% of grid points")
+    return gp
 
-    # Also check at the fine-grid level where it exits
-    if pct_inside < 100:
-        outside_times = t_grid.flatten()[~inside]
-        print(f"  Outside CI at times (s): {outside_times[0]:.0f}–{outside_times[-1]:.0f}")
 
-    exp_test = pd.DataFrame({
-        "time_s":      t_grid.flatten(),
-        "exp_pred":    exp_pred,
-        "gp_mu":       mu,
-        "gp_ci_lo":    ci_lo,
-        "gp_ci_hi":    ci_hi,
-        "inside_ci":   inside,
-    })
-    exp_test.to_csv(RESULTS_DIR / "exponential_test.csv", index=False, float_format="%.6f")
-    print("Saved: exponential_test.csv")
-    exp_fitted = True
+gp_early  = fit_gp(bins_early, "early")
+gp_recent = fit_gp(bins_recent, "recent")
 
-except RuntimeError as e:
-    print(f"  Exponential fit failed: {e}")
-    exp_fitted = False
+# ── Predict on Fine Grid ──────────────────────────────────────────────────────
 
-# ── 6. Validation Posterior Predictive Check ──────────────────────────────────
-# Predict the GP posterior at validation bin midpoints and check whether
-# the validation means fall within the posterior predictive interval.
+t_grid = np.linspace(0, PULL_CUTOFF, N_GRID).reshape(-1, 1)
 
-X_valid    = bins_valid["midpoint"].values.reshape(-1, 1)
-mu_v, std_v = gp.predict(X_valid, return_std=True)
-ci_lo_v    = mu_v - 1.96 * std_v
-ci_hi_v    = mu_v + 1.96 * std_v
-inside_v   = (bins_valid["mean_xG"].values >= ci_lo_v) & \
-             (bins_valid["mean_xG"].values <= ci_hi_v)
+mu_early, std_early = gp_early.predict(t_grid, return_std=True)
+ci_lo_early = mu_early - 1.96 * std_early
+ci_hi_early = mu_early + 1.96 * std_early
 
-print(f"\nValidation posterior predictive check:")
-print(f"  Bins inside GP 95% CI: {inside_v.sum()} / {len(inside_v)} "
-      f"({inside_v.mean()*100:.0f}%)")
+mu_recent, std_recent = gp_recent.predict(t_grid, return_std=True)
+ci_lo_recent = mu_recent - 1.96 * std_recent
+ci_hi_recent = mu_recent + 1.96 * std_recent
 
-# ── 7. Figures ────────────────────────────────────────────────────────────────
+gp_early_results = pd.DataFrame({
+    "time_s": t_grid.flatten(),
+    "mu": mu_early,
+    "std": std_early,
+    "ci_lo": ci_lo_early,
+    "ci_hi": ci_hi_early,
+})
+gp_early_results.to_csv(RESULTS_DIR / "gp_results_early.csv", index=False, float_format="%.6f")
+
+gp_recent_results = pd.DataFrame({
+    "time_s": t_grid.flatten(),
+    "mu": mu_recent,
+    "std": std_recent,
+    "ci_lo": ci_lo_recent,
+    "ci_hi": ci_hi_recent,
+})
+gp_recent_results.to_csv(RESULTS_DIR / "gp_results_recent.csv", index=False, float_format="%.6f")
+
+print("\nSaved: gp_results_early.csv, gp_results_recent.csv")
+
+# ── Validation Check Against Both GPs ─────────────────────────────────────────
+
+print("\n" + "="*70)
+print("Validation: 2024-25 vs Early Era GP")
+print("="*70)
+
+X_validate = bins_validate["midpoint"].values.reshape(-1, 1)
+mu_v_vs_early, std_v_vs_early = gp_early.predict(X_validate, return_std=True)
+ci_lo_v_early = mu_v_vs_early - 1.96 * std_v_vs_early
+ci_hi_v_early = mu_v_vs_early + 1.96 * std_v_vs_early
+inside_early = (bins_validate["mean_xG"].values >= ci_lo_v_early) & \
+               (bins_validate["mean_xG"].values <= ci_hi_v_early)
+
+print(f"  Validation bins inside early-era GP CI: {inside_early.sum()} / {len(inside_early)}")
+if inside_early.sum() < len(inside_early):
+    print(f"  → {(~inside_early).sum()} bins OUTSIDE early GP  [evidence of strategic shift]")
+
+print("\n" + "="*70)
+print("Validation: 2024-25 vs Recent Era GP")
+print("="*70)
+
+mu_v_vs_recent, std_v_vs_recent = gp_recent.predict(X_validate, return_std=True)
+ci_lo_v_recent = mu_v_vs_recent - 1.96 * std_v_vs_recent
+ci_hi_v_recent = mu_v_vs_recent + 1.96 * std_v_vs_recent
+inside_recent = (bins_validate["mean_xG"].values >= ci_lo_v_recent) & \
+                (bins_validate["mean_xG"].values <= ci_hi_v_recent)
+
+print(f"  Validation bins inside recent-era GP CI: {inside_recent.sum()} / {len(inside_recent)}")
+if inside_recent.sum() == len(inside_recent):
+    print(f"  → ALL bins inside recent GP  [trend is stable/continuing]")
+
+# ── Figures ───────────────────────────────────────────────────────────────────
 
 t_flat = t_grid.flatten()
 
-# ── Fig 6: GP posterior + training bin means ──────────────────────────────────
-fig, ax = plt.subplots(figsize=(8, 5))
+# ── Fig 6a: Early Era GP ──────────────────────────────────────────────────────
 
-ax.fill_between(t_flat, ci_lo, ci_hi, alpha=0.25, color="#2166ac",
-                label="GP 95% credible interval")
-ax.plot(t_flat, mu, color="#2166ac", linewidth=2, label="GP posterior mean")
-ax.scatter(bins_train["midpoint"], bins_train["mean_xG"],
-           s=bins_train["n"] / bins_train["n"].max() * 120,
-           color="#d73027", zorder=5, label="Training bin means\n(size ∝ shots)")
-ax.errorbar(bins_train["midpoint"], bins_train["mean_xG"],
-            yerr=1.96 * np.sqrt(bins_train["se_sq"]),
-            fmt="none", color="#d73027", linewidth=1, alpha=0.6)
+fig, ax = plt.subplots(figsize=(9, 5))
 
-# Mark the four 5-minute window boundaries
-for boundary in [300, 600, 900]:
-    ax.axvline(boundary, color="grey", linewidth=0.8, linestyle=":", alpha=0.5)
+ax.fill_between(t_flat, ci_lo_early, ci_hi_early, alpha=0.25, color="#2166ac",
+                label="Early era GP 95% CI")
+ax.plot(t_flat, mu_early, color="#2166ac", linewidth=2.5, label="Early era GP mean")
+ax.scatter(bins_early["midpoint"], bins_early["mean_xG"],
+           s=bins_early["n"] / bins_early["n"].max() * 120,
+           color="#d73027", zorder=5, label="Training bins (2014-21)")
+ax.errorbar(bins_early["midpoint"], bins_early["mean_xG"],
+            yerr=1.96 * np.sqrt(bins_early["se_sq"]),
+            fmt="none", color="#d73027", linewidth=1, alpha=0.5)
 
-ax.set_xlabel("Time into third period (seconds)", fontsize=11)
-ax.set_ylabel("Mean xGoal per shot", fontsize=11)
-ax.set_title("GP Regression: Within-Period Shot Quality Dynamics\n"
-             "Trailing team, 2-goal deficit  |  Training: 2022–24", fontsize=11)
-ax.set_xlim(0, PULL_CUTOFF)
-ax.legend(fontsize=9, framealpha=0.9)
-
-# Annotate window labels
-for mid, lbl in zip([150, 450, 750, 1020], ["0–5 min", "5–10 min", "10–15 min", "15–18.5 min"]):
-    ax.text(mid, ax.get_ylim()[0] + 0.001, lbl, ha="center", fontsize=7.5,
-            color="grey", style="italic")
-
-plt.tight_layout()
-plt.savefig(FIG_DIR / "fig6_gp_posterior.png", bbox_inches="tight")
-plt.close()
-print("Saved: FIG/fig6_gp_posterior.png")
-
-# ── Fig 7: Exponential overlay ────────────────────────────────────────────────
-if exp_fitted:
-    fig, ax = plt.subplots(figsize=(8, 5))
-
-    ax.fill_between(t_flat, ci_lo, ci_hi, alpha=0.2, color="#2166ac",
-                    label="GP 95% credible interval")
-    ax.plot(t_flat, mu, color="#2166ac", linewidth=2, label="GP posterior mean")
-    ax.plot(t_flat, exp_pred, color="#d73027", linewidth=2, linestyle="--",
-            label=f"Exponential fit  (a={a_fit:.4f}, b={b_fit:.5f})")
-    ax.scatter(bins_train["midpoint"], bins_train["mean_xG"],
-               s=60, color="#555555", zorder=5, alpha=0.7, label="Training bin means")
-
-    for boundary in [300, 600, 900]:
-        ax.axvline(boundary, color="grey", linewidth=0.8, linestyle=":", alpha=0.5)
-
-    # Shade regions where exponential exits the CI
-    outside_mask = ~inside
-    ax.fill_between(t_flat, ci_lo, ci_hi,
-                    where=outside_mask, alpha=0.35, color="#d73027",
-                    label="Exponential outside CI")
-
-    ax.set_xlabel("Time into third period (seconds)", fontsize=11)
-    ax.set_ylabel("Mean xGoal per shot", fontsize=11)
-    ax.set_title(f"Exponential Consistency Test\n"
-                 f"{pct_inside:.1f}% of posterior inside CI  |  "
-                 f"Training: 2022–24", fontsize=11)
-    ax.set_xlim(0, PULL_CUTOFF)
-    ax.legend(fontsize=9, framealpha=0.9)
-    plt.tight_layout()
-    plt.savefig(FIG_DIR / "fig7_exponential_overlay.png", bbox_inches="tight")
-    plt.close()
-    print("Saved: FIG/fig7_exponential_overlay.png")
-
-# ── Fig 8: Validation posterior predictive check ──────────────────────────────
-fig, ax = plt.subplots(figsize=(8, 5))
-
-ax.fill_between(t_flat, ci_lo, ci_hi, alpha=0.2, color="#2166ac",
-                label="Training GP 95% CI (2022–24)")
-ax.plot(t_flat, mu, color="#2166ac", linewidth=2, label="Training GP mean")
-
-# Validation bins: green = inside CI, red = outside
-colors_v = ["#4dac26" if ins else "#d73027" for ins in inside_v]
-ax.scatter(bins_valid["midpoint"], bins_valid["mean_xG"],
-           c=colors_v, s=70, zorder=5,
-           label=f"Validation bins (2024–25)  "
-                 f"[{inside_v.sum()}/{len(inside_v)} inside CI]")
-ax.errorbar(bins_valid["midpoint"], bins_valid["mean_xG"],
-            yerr=1.96 * np.sqrt(bins_valid["se_sq"]),
-            fmt="none", color="grey", linewidth=1, alpha=0.6)
+# Overlay validation points
+ax.scatter(bins_validate["midpoint"], bins_validate["mean_xG"],
+           s=70, color="#4dac26", marker="^", zorder=6,
+           label=f"Validation 2024-25\n[{inside_early.sum()}/{len(inside_early)} inside CI]")
 
 for boundary in [300, 600, 900]:
     ax.axvline(boundary, color="grey", linewidth=0.8, linestyle=":", alpha=0.5)
 
 ax.set_xlabel("Time into third period (seconds)", fontsize=11)
 ax.set_ylabel("Mean xGoal per shot", fontsize=11)
-ax.set_title("Prospective Validation: 2024–25 Season\n"
-             "vs. GP Posterior Predictive (trained on 2022–24)", fontsize=11)
+ax.set_title("Early Era (2014-21) GP Posterior\nwith Recent Validation Data Overlaid\n"
+             "(Points outside CI = evidence of strategic shift)", fontsize=11)
 ax.set_xlim(0, PULL_CUTOFF)
-ax.legend(fontsize=9, framealpha=0.9)
+ax.legend(fontsize=9, framealpha=0.95)
 plt.tight_layout()
-plt.savefig(FIG_DIR / "fig8_validation_gp.png", bbox_inches="tight")
+plt.savefig(FIG_DIR / "fig6a_gp_early.png", bbox_inches="tight")
 plt.close()
-print("Saved: FIG/fig8_validation_gp.png")
+print("Saved: fig6a_gp_early.png")
 
-# ── Fig 9: Semi-log plot ───────────────────────────────────────────────────────
-# If the exponential model were correct, log(mean_xG) vs time would be linear.
-# Plot log(bin mean) vs time for training data to visualise departure from linearity.
+# ── Fig 6b: Recent Era GP ─────────────────────────────────────────────────────
 
-fig, ax = plt.subplots(figsize=(8, 5))
+fig, ax = plt.subplots(figsize=(9, 5))
 
-log_y     = np.log(bins_train["mean_xG"].values)
-log_ci_lo = np.log(np.maximum(ci_lo, 1e-6))
-log_ci_hi = np.log(ci_hi)
+ax.fill_between(t_flat, ci_lo_recent, ci_hi_recent, alpha=0.25, color="#d73027",
+                label="Recent era GP 95% CI")
+ax.plot(t_flat, mu_recent, color="#d73027", linewidth=2.5, label="Recent era GP mean")
+ax.scatter(bins_recent["midpoint"], bins_recent["mean_xG"],
+           s=bins_recent["n"] / bins_recent["n"].max() * 120,
+           color="#2166ac", zorder=5, label="Training bins (2022-24)")
+ax.errorbar(bins_recent["midpoint"], bins_recent["mean_xG"],
+            yerr=1.96 * np.sqrt(bins_recent["se_sq"]),
+            fmt="none", color="#2166ac", linewidth=1, alpha=0.5)
 
-ax.fill_between(t_flat, log_ci_lo, log_ci_hi, alpha=0.2, color="#2166ac",
-                label="GP 95% CI (log scale)")
-ax.plot(t_flat, np.log(mu), color="#2166ac", linewidth=2, label="GP posterior mean")
-ax.scatter(bins_train["midpoint"], log_y,
-           s=60, color="#d73027", zorder=5, label="log(bin mean xGoal)")
-
-# If exponential fit: log(y) = log(a) + b*t is a straight line — overlay it
-if exp_fitted:
-    ax.plot(t_flat, np.log(a_fit) + b_fit * t_flat,
-            color="#d73027", linewidth=1.5, linestyle="--",
-            label=f"Exponential (linear in log space)")
+# Overlay validation points
+ax.scatter(bins_validate["midpoint"], bins_validate["mean_xG"],
+           s=70, color="#4dac26", marker="^", zorder=6,
+           label=f"Validation 2024-25\n[{inside_recent.sum()}/{len(inside_recent)} inside CI]")
 
 for boundary in [300, 600, 900]:
     ax.axvline(boundary, color="grey", linewidth=0.8, linestyle=":", alpha=0.5)
 
 ax.set_xlabel("Time into third period (seconds)", fontsize=11)
-ax.set_ylabel("log(Mean xGoal per shot)", fontsize=11)
-ax.set_title("Semi-Log Plot: Exponential Model Diagnostics\n"
-             "(Linear trend = consistent with exponential growth)", fontsize=11)
+ax.set_ylabel("Mean xGoal per shot", fontsize=11)
+ax.set_title("Recent Era (2022-24) GP Posterior\nwith Validation Data (2024-25)\n"
+             "(All points inside CI = trend continues)", fontsize=11)
 ax.set_xlim(0, PULL_CUTOFF)
-ax.legend(fontsize=9, framealpha=0.9)
+ax.legend(fontsize=9, framealpha=0.95)
 plt.tight_layout()
-plt.savefig(FIG_DIR / "fig9_semilog.png", bbox_inches="tight")
+plt.savefig(FIG_DIR / "fig6b_gp_recent.png", bbox_inches="tight")
 plt.close()
-print("Saved: FIG/fig9_semilog.png")
+print("Saved: fig6b_gp_recent.png")
 
-print("\nDone. GP regression complete.")
+# ── Fig 7: Overlay Both GPs ───────────────────────────────────────────────────
+
+fig, ax = plt.subplots(figsize=(10, 6))
+
+ax.fill_between(t_flat, ci_lo_early, ci_hi_early, alpha=0.15, color="#2166ac",
+                label="Early era 95% CI")
+ax.plot(t_flat, mu_early, color="#2166ac", linewidth=2.5, label="Early era mean (2014-21)")
+
+ax.fill_between(t_flat, ci_lo_recent, ci_hi_recent, alpha=0.15, color="#d73027",
+                label="Recent era 95% CI")
+ax.plot(t_flat, mu_recent, color="#d73027", linewidth=2.5, label="Recent era mean (2022-24)")
+
+# Add all bin points
+ax.scatter(bins_early["midpoint"], bins_early["mean_xG"],
+           s=50, color="#2166ac", alpha=0.6, zorder=4)
+ax.scatter(bins_recent["midpoint"], bins_recent["mean_xG"],
+           s=50, color="#d73027", alpha=0.6, zorder=4)
+
+# Validation overlay
+ax.scatter(bins_validate["midpoint"], bins_validate["mean_xG"],
+           s=80, color="#4dac26", marker="^", zorder=6,
+           label="Validation 2024-25", edgecolor="black", linewidth=0.5)
+
+for boundary in [300, 600, 900]:
+    ax.axvline(boundary, color="grey", linewidth=0.8, linestyle=":", alpha=0.5)
+
+# Shade the difference
+ax.fill_between(t_flat, mu_early, mu_recent, alpha=0.15, color="orange",
+                label="Era difference in posterior mean")
+
+ax.set_xlabel("Time into third period (seconds)", fontsize=11)
+ax.set_ylabel("Mean xGoal per shot", fontsize=11)
+ax.set_title("Comparison: Early vs Recent Era GPs\n"
+             "Strategic Shift Visualized as Level Difference", fontsize=12, fontweight="bold")
+ax.set_xlim(0, PULL_CUTOFF)
+ax.legend(fontsize=10, framealpha=0.95, loc="upper left")
+plt.tight_layout()
+plt.savefig(FIG_DIR / "fig7_gp_comparison.png", bbox_inches="tight")
+plt.close()
+print("Saved: fig7_gp_comparison.png")
+
+# ── Summary Statistics ────────────────────────────────────────────────────────
+
+print("\n" + "="*70)
+print("SUMMARY: Mean xGoal Across Period")
+print("="*70)
+
+print(f"\nEarly era (2014-21):")
+print(f"  GP posterior mean: {mu_early.mean():.5f}")
+print(f"  Training bin mean: {bins_early['mean_xG'].mean():.5f}")
+
+print(f"\nRecent era (2022-24):")
+print(f"  GP posterior mean: {mu_recent.mean():.5f}")
+print(f"  Training bin mean: {bins_recent['mean_xG'].mean():.5f}")
+
+print(f"\nValidation (2024-25):")
+print(f"  Observed mean: {bins_validate['mean_xG'].mean():.5f}")
+
+print(f"\nEra shift:")
+shift = (mu_recent.mean() - mu_early.mean()) / mu_early.mean() * 100
+print(f"  Recent vs Early: {shift:+.1f}%")
+
+print("\nDone.")
