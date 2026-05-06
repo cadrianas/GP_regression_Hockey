@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # Standard directories
 DATA_DIR = ROOT / "data"
 MODELS_DIR = ROOT / "models"
-RESULTS_DIR = ROOT / "results"
+RESULTS_DIR = ROOT / "Results"
 
 # Ensure they exist
 for d in [DATA_DIR, MODELS_DIR, RESULTS_DIR]:
