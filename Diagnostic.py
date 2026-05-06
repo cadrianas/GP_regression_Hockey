@@ -1,7 +1,4 @@
-"""
-Run this from your project root (same folder that contains the Data/ directory).
-Paste the full output back to Claude.
-"""
+
 import pandas as pd
 import numpy as np
 

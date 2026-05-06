@@ -2,9 +2,7 @@
 Decomposition Analysis: Volume vs. Quality in NHL Comeback Situations
 Multi-Season Version with Prospective Validation
 =====================================================================
-Training:   shots_2024.csv (2023–24 season)
-            shots_2025.csv (2024–25 season)
-Validation: shots_2026.csv (2025–26 season, current/partial)
+
 
 MoneyPuck file naming convention: shots_{ENDING_YEAR}.csv
 e.g. shots_2024.csv = the 2023-24 season
@@ -27,15 +25,42 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+from pathlib import Path
+import sys
+
+# Find project root dynamically
+ROOT = Path(__file__).resolve().parent
+while not (ROOT / "src").exists():
+    ROOT = ROOT.parent
+
+sys.path.append(str(ROOT))
+
+
+
+from src.paths import DATA_DIR, RESULTS_DIR
+
+OUTPUT_DIR = RESULTS_DIR / "decomposition"
+FIG_DIR = OUTPUT_DIR / "figures"
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+FIG_DIR.mkdir(parents=True, exist_ok=True)
 # ── 0. Configuration ──────────────────────────────────────────────────────────
 
 # Map file path → season label and role
 # MoneyPuck naming: shots_{YEAR}.csv = season ending in {YEAR}
-# e.g. shots_2023.csv = 2022-23 season (season value 2023 in the data)
+
 SEASONS = {
-    "Data/shots_2023.csv": {"label": "2022-23", "role": "train"},
-    "Data/shots_2024.csv": {"label": "2023-24", "role": "train"},
-    "Data/shots_2025.csv": {"label": "2024-25", "role": "validate"},
+    DATA_DIR / "shots_2014.csv": {"label": "2014-15", "role": "train"},
+    DATA_DIR / "shots_2015.csv": {"label": "2015-16", "role": "train"},
+    DATA_DIR / "shots_2016.csv": {"label": "2016-17", "role": "train"},
+    DATA_DIR / "shots_2017.csv": {"label": "2017-18", "role": "train"},
+    DATA_DIR / "shots_2018.csv": {"label": "2018-19", "role": "train"},
+    DATA_DIR / "shots_2019.csv": {"label": "2019-20", "role": "train"},
+    DATA_DIR / "shots_2020.csv": {"label": "2020-21", "role": "train"},
+    DATA_DIR / "shots_2021.csv": {"label": "2021-22", "role": "train"},
+    DATA_DIR / "shots_2022.csv": {"label": "2022-23", "role": "train"},
+    DATA_DIR / "shots_2023.csv": {"label": "2023-24", "role": "train"},
+    DATA_DIR / "shots_2024.csv": {"label": "2024-25", "role": "validate"},
 }
 
 PERIOD_DURATION  = 1200
@@ -47,8 +72,6 @@ WINDOW_MIDPOINTS = [150, 450, 750, 1050]   # seconds; fed to GP regression later
 # Exclude final ~90 s to avoid goalie-pull regime contamination
 PULL_CUTOFF = 1110
 
-import os
-os.makedirs("FIG", exist_ok=True)
 
 plt.rcParams.update({
     "font.family": "serif",
@@ -285,7 +308,7 @@ for ax, col, ylabel, title in zip(
                 bar.get_height() + pooled[col].max()*0.015,
                 f"{val:.3f}", ha="center", va="bottom", fontsize=7.5)
 plt.tight_layout()
-plt.savefig("FIG/fig1_decomposition_bars.png", bbox_inches="tight")
+plt.savefig(FIG_DIR / "fig1_decomposition_bars.png", bbox_inches="tight")
 plt.close()
 print("Saved: fig1_decomposition_bars.png")
 
@@ -304,7 +327,7 @@ ax.set_xlabel("Time window in third period", fontsize=10)
 ax.set_title("Relative Change: Volume, Quality, Total xG\n(Pooled training: 2023–25)", fontsize=10)
 ax.legend(framealpha=0.9, fontsize=9)
 plt.tight_layout()
-plt.savefig("FIG/fig2_indexed_trajectories.png", bbox_inches="tight")
+plt.savefig(FIG_DIR / "fig2_indexed_trajectories.png", bbox_inches="tight")
 plt.close()
 print("Saved: fig2_indexed_trajectories.png")
 
@@ -326,7 +349,7 @@ for ax, (_, meta) in zip(axes, SEASONS.items()):
     ax.set_ylabel("Shots", fontsize=8)
     ax.legend(fontsize=7.5)
 plt.tight_layout()
-plt.savefig("FIG/fig3_xgoal_histogram.png", bbox_inches="tight")
+plt.savefig(FIG_DIR / "fig3_xgoal_histogram.png", bbox_inches="tight")
 plt.close()
 print("Saved: fig3_xgoal_histogram.png")
 
@@ -345,7 +368,7 @@ ax.set_title("Season-Level Consistency Check\n"
              "(If curves diverge substantially, pooling is not justified)", fontsize=10)
 ax.legend(fontsize=9)
 plt.tight_layout()
-plt.savefig("FIG/fig4_season_consistency.png", bbox_inches="tight")
+plt.savefig(FIG_DIR / "fig4_season_consistency.png", bbox_inches="tight")
 plt.close()
 print("Saved: fig4_season_consistency.png")
 
@@ -370,7 +393,7 @@ ax.set_title("Prospective Validation: 2025–26 Season\n"
              "vs. Training Bootstrap CI (2023–25)", fontsize=10)
 ax.legend(framealpha=0.9, fontsize=9)
 plt.tight_layout()
-plt.savefig("FIG/fig5_validation.png", bbox_inches="tight")
+plt.savefig(FIG_DIR / "fig5_validation.png", bbox_inches="tight")
 plt.close()
 print("Saved: fig5_validation.png")
 

@@ -4,8 +4,8 @@ GP Regression: Within-Period xGoal Dynamics in Comeback Situations
 Follows decomposition_analysis.py — run that script first to confirm
 your data loads correctly, then run this script.
 
-Training:   shots_2023.csv (2022-23) + shots_2024.csv (2023-24)
-Validation: shots_2025.csv (2024-25)
+Training:   seasons 2014-2015 to 2023-2024
+Validation:  season 2024-25
 
 What this script produces
 -------------------------
@@ -29,8 +29,20 @@ from scipy.optimize import curve_fit
 from scipy.stats import pearsonr
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
+from pathlib import Path
+import sys
 
-os.makedirs("FIG", exist_ok=True)
+# Find project root dynamically
+ROOT = Path(__file__).resolve().parent
+while not (ROOT / "src").exists():
+    ROOT = ROOT.parent
+
+sys.path.append(str(ROOT))
+
+from src.paths import DATA_DIR, RESULTS_DIR
+
+FIG_DIR = RESULTS_DIR / "figures"
+FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 plt.rcParams.update({
     "font.family": "serif",
@@ -44,9 +56,17 @@ plt.rcParams.update({
 # ── 0. Configuration ──────────────────────────────────────────────────────────
 
 SEASONS = {
-    "Data/shots_2023.csv": {"label": "2022-23", "role": "train"},
-    "Data/shots_2024.csv": {"label": "2023-24", "role": "train"},
-    "Data/shots_2025.csv": {"label": "2024-25", "role": "validate"},
+    DATA_DIR / "shots_2014.csv": {"label": "2014-15", "role": "train"},
+    DATA_DIR / "shots_2015.csv": {"label": "2015-16", "role": "train"},
+    DATA_DIR / "shots_2016.csv": {"label": "2016-17", "role": "train"},
+    DATA_DIR / "shots_2017.csv": {"label": "2017-18", "role": "train"},
+    DATA_DIR / "shots_2018.csv": {"label": "2018-19", "role": "train"},
+    DATA_DIR / "shots_2019.csv": {"label": "2019-20", "role": "train"},
+    DATA_DIR / "shots_2020.csv": {"label": "2020-21", "role": "train"},
+    DATA_DIR / "shots_2021.csv": {"label": "2021-22", "role": "train"},
+    DATA_DIR / "shots_2022.csv": {"label": "2022-23", "role": "train"},
+    DATA_DIR / "shots_2023.csv": {"label": "2023-24", "role": "train"},
+    DATA_DIR / "shots_2024.csv": {"label": "2024-25", "role": "validate"},
 }
 
 PULL_CUTOFF = 1110      # seconds into period; exclude goalie-pull epoch
@@ -82,7 +102,7 @@ def load_and_filter(filepath, season_label):
 print("Loading data...")
 all_dfs = []
 for filepath, meta in SEASONS.items():
-    if not os.path.exists(filepath):
+    if not filepath.exists():
         print(f"  SKIPPING {filepath} — not found")
         continue
     df_s = load_and_filter(filepath, meta["label"])
@@ -132,8 +152,8 @@ print(f"\nTraining bins: {len(bins_train)}  |  Validation bins: {len(bins_valid)
 print(bins_train[["midpoint", "n", "mean_xG", "se_sq"]].to_string(index=False,
       float_format="{:.5f}".format))
 
-bins_train.to_csv("gp_bin_data_train.csv", index=False, float_format="%.6f")
-bins_valid.to_csv("gp_bin_data_valid.csv", index=False, float_format="%.6f")
+bins_train.to_csv(RESULTS_DIR / "gp_bin_data_train.csv", index=False, float_format="%.6f")
+bins_valid.to_csv(RESULTS_DIR / "gp_bin_data_valid.csv", index=False, float_format="%.6f")
 
 # ── 3. Fit GP ─────────────────────────────────────────────────────────────────
 #
@@ -185,7 +205,7 @@ gp_results = pd.DataFrame({
     "ci_lo":   ci_lo,
     "ci_hi":   ci_hi,
 })
-gp_results.to_csv("gp_results.csv", index=False, float_format="%.6f")
+gp_results.to_csv(RESULTS_DIR / "gp_results.csv", index=False, float_format="%.6f")
 print("Saved: gp_results.csv")
 
 # ── 5. Exponential Fit & Consistency Test ────────────────────────────────────
@@ -230,7 +250,7 @@ try:
         "gp_ci_hi":    ci_hi,
         "inside_ci":   inside,
     })
-    exp_test.to_csv("exponential_test.csv", index=False, float_format="%.6f")
+    exp_test.to_csv(RESULTS_DIR / "exponential_test.csv", index=False, float_format="%.6f")
     print("Saved: exponential_test.csv")
     exp_fitted = True
 
@@ -287,7 +307,7 @@ for mid, lbl in zip([150, 450, 750, 1020], ["0–5 min", "5–10 min", "10–15 
             color="grey", style="italic")
 
 plt.tight_layout()
-plt.savefig("FIG/fig6_gp_posterior.png", bbox_inches="tight")
+plt.savefig(FIG_DIR / "fig6_gp_posterior.png", bbox_inches="tight")
 plt.close()
 print("Saved: FIG/fig6_gp_posterior.png")
 
@@ -320,7 +340,7 @@ if exp_fitted:
     ax.set_xlim(0, PULL_CUTOFF)
     ax.legend(fontsize=9, framealpha=0.9)
     plt.tight_layout()
-    plt.savefig("FIG/fig7_exponential_overlay.png", bbox_inches="tight")
+    plt.savefig(FIG_DIR / "fig7_exponential_overlay.png", bbox_inches="tight")
     plt.close()
     print("Saved: FIG/fig7_exponential_overlay.png")
 
@@ -351,7 +371,7 @@ ax.set_title("Prospective Validation: 2024–25 Season\n"
 ax.set_xlim(0, PULL_CUTOFF)
 ax.legend(fontsize=9, framealpha=0.9)
 plt.tight_layout()
-plt.savefig("FIG/fig8_validation_gp.png", bbox_inches="tight")
+plt.savefig(FIG_DIR / "fig8_validation_gp.png", bbox_inches="tight")
 plt.close()
 print("Saved: FIG/fig8_validation_gp.png")
 
@@ -387,7 +407,7 @@ ax.set_title("Semi-Log Plot: Exponential Model Diagnostics\n"
 ax.set_xlim(0, PULL_CUTOFF)
 ax.legend(fontsize=9, framealpha=0.9)
 plt.tight_layout()
-plt.savefig("FIG/fig9_semilog.png", bbox_inches="tight")
+plt.savefig(FIG_DIR / "fig9_semilog.png", bbox_inches="tight")
 plt.close()
 print("Saved: FIG/fig9_semilog.png")
 
