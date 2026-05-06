@@ -157,3 +157,4 @@ data/
 notebooks/*.ipynb_checkpoints
 *.joblib
 notebooks/*.pkl
+models/
