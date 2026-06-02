@@ -162,24 +162,6 @@ The 2024–25 validation set has ~5k shots (partial season). Conclusions should 
 
 xGoal values are treated as fixed, even though they are themselves model predictions from MoneyPuck's expected goals model. Systematic bias in that model (e.g., underestimating danger-zone xGoal) would propagate into our estimates. This package takes xGoal as given and does not propagate model uncertainty.
 
----
-
-## Citation
-
-If you use this analysis in research, please cite the companion paper:
-
-```bibtex
-@article{ciupeanu2025adaptation,
-  title   = {Strategic Adaptation in High-Leverage Situations: 
-             Shot Selection Evolution in {NHL} Comeback Attempts},
-  author  = {Ciupeanu, Adriana-Stefania},
-  journal = {Journal of Quantitative Analysis in Sports},
-  year    = {2025},
-  note    = {Preprint: arXiv:XXXX.XXXXX}
-}
-```
-
----
 
 ## Key Takeaways
 
@@ -196,3 +178,5 @@ If you use this analysis in research, please cite the companion paper:
 **Last Updated:** May 2026
 **author** Adriana-Stefania Ciupeanu
 **licence** Code licence under GNU General Public License v3.0 (GPLv3)
+
+*Note: grammarly and google jules were used in this project*
