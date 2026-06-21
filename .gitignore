@@ -158,3 +158,6 @@ notebooks/*.ipynb_checkpoints
 *.joblib
 notebooks/*.pkl
 models/
+
+interview_questions.md
+gaussian_process_regression.md
