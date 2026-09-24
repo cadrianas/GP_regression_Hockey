@@ -1,182 +1,97 @@
-# hockeybayes: From Pressure Dynamics to Strategic Adaptation
+# hockeybayes
 
+Gaussian process regression for NHL shot quality when a team is down two goals in the third period.
 
-## The Research Journey
+Does a team generate better chances as time runs out? This project uses MoneyPuck shot data to examine how expected goals per shot change through the period, and whether that pattern holds across seasons. The question is about the chances teams create while trailing, rather than whether they eventually complete a comeback.
 
-This project began with a simple question and revealed something far larger. Here's what happened.
+The analysis starts with shot counts and average shot quality, then fits Gaussian processes to the time trajectories. Separating those quantities matters: a team can generate more expected goals by shooting more often, taking better shots, or both.
 
-### Phase 1: The Within-Period Question
+## Approach
 
-**Original hypothesis:** When an NHL team trails by two goals in the third period, does **pressure and time scarcity** cause them to take higher-quality shots?
+The main scripts keep shots taken by the trailing team when the score difference is exactly two goals in the third period. They use MoneyPuck's `xGoal` value as the measure of shot quality and exclude shots after 18:30 of the period.
 
-Using 47,046 shots from 2014–2024 in comeback situations (down 2 goals, 3rd period), we binned shots into four five-minute windows and found:
+There are three parts to the analysis:
 
-| Window | Mean xGoal | % Change |
-|--------|-----------|----------|
-| 0–5 min (early) | 0.0640 | — |
-| 5–10 min | 0.0661 | +3.1% |
-| 10–15 min | 0.0653 | +2.0% |
-| **15–20 min (late)** | **0.0940** | **+46.9%** |
+1. **Decomposition.** Compare shot volume, mean xGoal, and total xG in five-minute windows. Exploratory ANOVA and Kruskal–Wallis tests compare game-mean distributions across seasons, with a correction for inspecting four windows. These tests use a different estimand from the shot-weighted summaries.
+2. **Gaussian process regression.** Fit separate trajectories for the earlier and more recent seasons using one-minute averages. The model uses a Matérn 5/2 kernel with a constant scale and white noise, plus sampling variances estimated by resampling whole games within each season. The variances are rescaled to match the normalized target.
+3. **Diagnostics and validation.** Examine shot locations and shot types, and compare the fitted trajectories with a held-out season.
 
-**Result:** Highly significant (t = 21.06, p < 1e-97). Shot quality spiked in the final five minutes.
+The current GP configuration assigns 2014–15 through 2021–22 to the early group, 2022–23 through 2023–24 to the recent group, and 2024–25 to validation. Filenames use the starting year: `shots_2024.csv` contains 2024–25. The loader checks the source `season` field against this mapping.
 
-**Interpretation:** Within a single game situation, teams do improve shot quality under desperation. But this told only half the story.
+## Reading the results
 
-### Phase 2: Pooling Assumption Breaks
+The saved analyses show higher average xGoal late in the period and differences across seasons. Those patterns motivate fitting separate era trajectories instead of treating the whole decade as one sample.
 
-When we tested whether this pattern was **stable across seasons**, something unexpected happened:
+They do not establish that time pressure causes better shot selection, or that analytics adoption explains the changes between seasons. Shot quality also depends on personnel, defensive play, game state, and the mix of shots that enter the sample. Deliberate tactical adaptation is one possible explanation, but this analysis cannot distinguish it from those alternatives.
 
-- We ran **Kruskal-Wallis tests** separately for each time window
-- **Result:** Massive heterogeneity. Early seasons (2014–18) looked different from recent seasons (2022–24)
-- **Insight:** We couldn't just pool all years—the **underlying dynamics had shifted**
+The analysis was rerun on September 2026 using all 11 configured season files (first analysis only used 3 seasons, then it was updated to include from the 2014-2015 season up to the 2025-2026 season). [Current results](Results/corrected/summary.md) include 43,094 training shots from 6,026 games and 4,909 held-out shots from 692 games. Mean xGoal rises from 0.06174 in the first window to 0.08062 in the last analyzed window, a descriptive increase of 30.6%. The recent-era GP has lower held-out RMSE than the early-era fit (0.00734 versus 0.01117); its nominal 95% prediction intervals cover 17 of 19 validation bins.
 
-Shot quality in comeback situations wasn't just driven by *time pressure within a game*. It was driven by something **structural that changed across the decade**.
+Current tables, figures, and a run manifest are in `Results/corrected/`. Superseded results, notebooks, and model artifacts have been removed.
 
-### Phase 3: The Era Story Emerges
+## Running the analysis
 
-We split the data into two eras:
+From the repository root, create a Python environment and install the libraries used by the main scripts:
 
-- **Early Era (2014–21):** 33,252 shots across 5,862 games
-- **Recent Era (2022–24):** 9,842 shots across 1,705 games
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
 
-And decomposed expected goals per game:
+Download the shot-level CSVs from [MoneyPuck](https://moneypuck.com/data.htm). The main scripts look for `shots_2014.csv` through `shots_2024.csv` in the directory set by `DATA_DIR` in `src/paths.py`. The path uses an existing `Data/` directory, or falls back to `data/`. Each analysis accepts `--data-dir` and `--output-dir` to override the defaults.
 
-$$\text{xG}_\text{per game} = \text{Shot Volume} \times \text{Shot Quality}$$
+Season and era definitions live in `src/analysis.py`. The analysis commands require all configured files and stop with a list of missing inputs before writing outputs. `shots_2025.csv` is outside the configured study period.
 
-**Finding:**
+```bash
+python src/decomposition.py --output-dir Results/corrected/decomposition
+python src/GP_regression.py --output-dir Results/corrected/gp
+python src/diagnostic_shot_location.py --output-dir Results/corrected/diagnostics
+python src/results.py --output-dir Results/corrected/model_comparison
+```
 
-| Metric | Early (2014–21) | Recent (2022–24) | Change |
-|--------|-----------------|------------------|--------|
-| Shots per game | 1.97 | 1.98 | **+0.5%** (no change) |
-| Mean xGoal per shot | 0.0582 | 0.0654 | **+12.4%** |
-| **Total xG per game** | **0.1146** | **0.1295** | **+13.0%** |
+These scripts read the shot data independently and write tables and figures under `Results/`. Raw season files are not included in Git. Dependencies are pinned to the versions used for verification with Python 3.9.
 
-**The mechanism:** Shot volume stayed flat. All improvement came from **higher-quality shot selection**—teams deliberately moved shots toward higher-danger locations (slot vs. perimeter).
+## Repository guide
 
-**Mechanism details:**
-- Danger-zone concentration (slots < 20 ft): **27% → 31%** (+5 pp)
-- Slapshot frequency: **12.2% → 6.8%** (−5.4 pp)
-- Net-front tips and snaps: Increased substantially
+| Path | Contents |
+| --- | --- |
+| `src/decomposition.py` | Window summaries, season comparisons, and bootstrap validation |
+| `src/GP_regression.py` | Separate GP fits by era and held-out comparisons |
+| `src/diagnostic_shot_location.py` | Shot-location and shot-type diagnostics |
+| `src/analysis.py` | Shared filters, season definitions, bootstrap, and GP functions |
+| `src/paths.py` | Shared data and output paths |
+| `Results/corrected/` | Current tables, figures, results summary, and run manifest |
+| `tests/` | Regression tests for filtering, weighting, and model uncertainty |
+| `requirements.txt` | Pinned analysis dependencies |
+| `gaussian_process_lecture_notes.md` | Background notes on Gaussian processes |
 
-This is not random variation. This is **strategic optimization** in response to analytics maturity.
+`src/results.py` now reads the configured shot files directly and compares each era's GP with constant, linear, and exponential baselines. The commands above write its outputs to `Results/corrected/model_comparison/`. Derivative-ratio intervals come from jointly sampled latent GP trajectories; they are descriptive, not a formal test rejecting exponential behavior.
 
----
+Run the regression tests with:
 
-## The Narrative: Analytics Adoption Changed Behavior
+```bash
+python -m unittest discover -s tests -v
+```
 
-The NHL's analytics timeline:
+To inspect the available local season files without requiring the complete study sample:
 
-- **2010–2015:** Pioneering teams (Toronto, Winnipeg) develop xGoal models
-- **2015–2020:** Gradual league-wide adoption; xGoal becomes standard metric
-- **2020–2022:** COVID acceleration; analytics legitimacy solidifies
-- **2022–2024:** Mature infrastructure achieved → shift from *measurement* to *optimization*
+```bash
+python src/Diagnostic.py
+```
 
-**We observe a structural break around 2022–23.** This is when teams stopped just measuring shot quality and started *optimizing strategy around it*.
+## Limits and unfinished work
 
-The evidence:
-- Trailing teams explicitly reposition toward higher-danger zones
-- This happens consistently across all five-minute windows (not desperation-driven)
-- The pattern persists in validation (2024–25 held-out season)
-- Effect size is substantial: +12.4% quality without volume increases
+- The 18:30 cutoff does not exclude every pulled-goalie situation. The diagnostics use the trailing team's explicit empty-net flag and report a percentage of sampled shots, not games or playing time. The final window is labeled 15–18:30; volume comparisons are normalized by clock-window duration. They are not shooting rates per minute spent trailing by two, which would require game-state exposure data.
+- Whole games are resampled within seasons, preserving shot weights and joint bin movements. The GP uses the resulting marginal bin variances but does not model their full covariance. Its latent intervals are pointwise and conditional on fitted hyperparameters. Held-out prediction intervals additionally include validation sampling variance and fitted residual noise.
+- Game keys combine season and game ID. Per-game summaries describe games with at least one qualifying shot; games with no qualifying shots are not represented in that denominator. Training–validation difference intervals include bootstrap uncertainty from both samples.
+- The era boundary is a modeling choice. Differences between seasons do not, by themselves, identify a structural break in 2022–23.
+- xGoal is itself a model estimate. This analysis treats it as fixed and does not propagate uncertainty from MoneyPuck's model.
+- League-wide averages can hide differences between teams. Team-level comparisons and sensitivity to alternative era boundaries remain useful next steps.
 
-**Conclusion:** Quantitative insights into win probability modified real in-game behavior. Teams learned to generate better shots under time pressure—and they learned to do it systematically, across the full period, not just in final moments.
+## Author and acknowledgements
 
----
+Adriana-Stefania Ciupeanu
 
-## What This Package Contains
+Code license: GNU General Public License v3.0 (GPLv3), as stated for this project. A standalone license file still needs to be added.
 
-This repository provides the **statistical tools and reproducible analysis** behind the paper:
-
-### Analysis Pipeline
-
-1. **Data loading and filtering** — Load MoneyPuck shot-level CSVs, filter to comeback situations
-2. **Temporal binning** — Aggregate shots into 5-minute windows for within-period analysis
-3. **Decomposition analysis** — Separate volume and quality drivers using indexed metrics
-4. **Heterogeneity testing** — Kruskal-Wallis tests to validate pooling assumptions
-5. **Era-level comparison** — Stratify by season period (early vs. recent) and diagnose mechanisms
-6. **Bayesian modeling** — Gaussian Process regression to smooth trajectories and quantify uncertainty
-7. **Publication figures** — Generate press-ready plots with credible bands and annotations
-
-### Key Output Artifacts
-
-- **Decomposition table** — Volume, quality, and total xG per game by era
-- **Heterogeneity test results** — P-values and test statistics for pooling assumption
-- **Gaussian Process posterior** — Mean trajectory + 95% credible intervals
-- **Diagnostic plots** — Within-period dynamics, era comparison, shot-type composition
-- **Validation results** — Out-of-sample predictions vs. 2024–25 held-out season
-
----
-
-## Methodological Notes
-
-### Why Decomposition First?
-
-Before fitting complex models, we decompose to understand **what changed**: volume or quality? This reveals the mechanism and guides subsequent analysis.
-
-### Why Heterogeneity Testing?
-
-Pooling years together assumes they're equivalent. Kruskal-Wallis tests validate that assumption. If violated (as we found), it signals structural breaks that warrant era-level analysis.
-
-### Why Gaussian Process?
-
-The GP makes no parametric assumption about trajectory shape. The posterior provides calibrated credible intervals that preserve uncertainty across the entire temporal domain. This is critical for a paper: reviewers want to know *not just* the point estimate, but the confidence around it.
-
-### Why Matérn 5/2?
-
-- Assumes the target function is twice-differentiable
-- More appropriate than RBF for a domain subject to discrete events (line changes, penalties, strategic shifts)
-- Computationally efficient
-- Theoretically justified for smooth athletic dynamics
-
-### Why Game-Level Bootstrap?
-
-Shots within a game are correlated (same goalie, ice conditions, opponent). Shot-level bootstrap ignores this and underestimates uncertainty. Game-level bootstrap preserves correlation structure and produces honest confidence intervals.
-
----
-
-## Limitations
-
-Understanding what this analysis **does not** do is as important as understanding what it does.
-
-### Descriptive, Not Causal
-
-The decomposition and heterogeneity tests show **associations** between era and shot quality. They do not establish causation. The observed improvement is consistent with analytics adoption, but other confounds could exist (roster changes, rule changes, defensive evolution). The paper argues that the *timing* and *mechanism* (location-based, not volume-based) make analytics adoption the most plausible explanation, but causality requires caution.
-
-### League-Wide Aggregation Masks Team Heterogeneity
-
-All analyses pool across 32 NHL teams. Individual teams may exhibit substantially different adaptation patterns depending on coaching philosophy, analytics investment, and roster stability. The league-wide pattern is a macro finding; team analytics staffs should treat it as a prior, not a prescription.
-
-### Era Boundary Is a Design Choice
-
-We split at 2022–23, motivated by institutional analytics timelines. The boundary is somewhat arbitrary. Sensitivity analysis (results with alternative boundaries: 2021, 2023) should be performed.
-
-### Goalie-Pull Regime Excluded
-
-Shots after 1110 seconds (~18:30 into the period) are excluded. This avoids contaminating the urgency signal with the structural regime change of goalie removal, but it means the analysis says nothing about the 6-on-5 period—arguably the highest-stakes window of a comeback.
-
-### Validation on Partial Season
-
-The 2024–25 validation set has ~5k shots (partial season). Conclusions should be interpreted with the smaller sample in mind. Full-season validation is deferred until the season completes.
-
-### xGoal Uncertainty Not Propagated
-
-xGoal values are treated as fixed, even though they are themselves model predictions from MoneyPuck's expected goals model. Systematic bias in that model (e.g., underestimating danger-zone xGoal) would propagate into our estimates. This package takes xGoal as given and does not propagate model uncertainty.
-
-
-## Key Takeaways
-
-| Question | Finding | Evidence |
-|----------|---------|----------|
-| **Do teams take better shots under pressure?** | Yes, within a single game situation, shot quality increases 46.9% from early to late period | t-test: p < 1e-97, n=22.5k shots |
-| **Is this pattern stable over time?** | No. Early seasons (2014–21) behave differently from recent seasons (2022–24) | Kruskal-Wallis: p < 0.0001 for most windows |
-| **What drove the era-level improvement?** | Shot quality increased 12.4% between eras, but volume stayed flat | Decomposition: quality 0.0582 → 0.0654 |
-| **How did quality improve without more shots?** | Teams moved shots toward higher-danger zones (slots vs. perimeter, tips vs. slaps) | Location analysis: danger zone 27% → 31% |
-| **Is this deliberate or random variation?** | Deliberate and systematic—effect is uniform across all 5-min windows and persists in validation | Heterogeneity test + out-of-sample validation |
-
----
-  
-**Last Updated:** May 2026
-**author** Adriana-Stefania Ciupeanu
-**licence** Code licence under GNU General Public License v3.0 (GPLv3)
-
-*Note: grammarly and google jules were used in this project*
+Grammarly and Google Jules were used during the project.

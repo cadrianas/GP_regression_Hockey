@@ -1,0 +1,130 @@
+{
+  "completed": true,
+  "input_files": [
+    {
+      "file": "shots_2014.csv",
+      "bytes": 60891327,
+      "year": 2014,
+      "label": "2014-15",
+      "era": "early",
+      "role": "train",
+      "sha256": "7a9591387456c8d9b5942422e078f068e464d54855e0481f7bbf94fd1b9c6066"
+    },
+    {
+      "file": "shots_2015.csv",
+      "bytes": 60830807,
+      "year": 2015,
+      "label": "2015-16",
+      "era": "early",
+      "role": "train",
+      "sha256": "354f3b0c1691d12970042c65d605f92e7abe338ad6fee4b00e7f1dfbec9cd93f"
+    },
+    {
+      "file": "shots_2016.csv",
+      "bytes": 61718381,
+      "year": 2016,
+      "label": "2016-17",
+      "era": "early",
+      "role": "train",
+      "sha256": "f41ad6dee541df906d81389efa87d866dbafae01fb15712eed36d753978893da"
+    },
+    {
+      "file": "shots_2017.csv",
+      "bytes": 66670644,
+      "year": 2017,
+      "label": "2017-18",
+      "era": "early",
+      "role": "train",
+      "sha256": "c0e3df3dbd3bd36d17083afae3f71f5f8eb288ec5c1e9e26c06e55f52bed3ea5"
+    },
+    {
+      "file": "shots_2018.csv",
+      "bytes": 65366469,
+      "year": 2018,
+      "label": "2018-19",
+      "era": "early",
+      "role": "train",
+      "sha256": "c79ff8aa96601ca2bd6ab85cf1a9aa4d7cd93f0ddd7d95ebb86cf3efcb377a84"
+    },
+    {
+      "file": "shots_2019.csv",
+      "bytes": 58400036,
+      "year": 2019,
+      "label": "2019-20",
+      "era": "early",
+      "role": "train",
+      "sha256": "347d5cd1fa334bd70f24b5d0e69948a84e10d186dec53dd03bd18f1f35859d03"
+    },
+    {
+      "file": "shots_2020.csv",
+      "bytes": 45266252,
+      "year": 2020,
+      "label": "2020-21",
+      "era": "early",
+      "role": "train",
+      "sha256": "8656dfe30b51aa309005d3c86132b879834d4206def21c5d6c4cef3e7c2e04ee"
+    },
+    {
+      "file": "shots_2021.csv",
+      "bytes": 68216389,
+      "year": 2021,
+      "label": "2021-22",
+      "era": "early",
+      "role": "train",
+      "sha256": "71fdf9c9151c05c23cb1cd5880c95bbf7903bd9961038aec7c05e7a086016112"
+    },
+    {
+      "file": "shots_2022.csv",
+      "bytes": 68739878,
+      "year": 2022,
+      "label": "2022-23",
+      "era": "recent",
+      "role": "train",
+      "sha256": "2140c276c53e05c23837707240ae63129c7a8638e231033cbdd8a0e219617164"
+    },
+    {
+      "file": "shots_2023.csv",
+      "bytes": 69293158,
+      "year": 2023,
+      "label": "2023-24",
+      "era": "recent",
+      "role": "train",
+      "sha256": "c73f7e577e50b401340c25fbb2c71a9402c6bf9f70df79acf0491e0aa7aa5869"
+    },
+    {
+      "file": "shots_2024.csv",
+      "bytes": 68879950,
+      "year": 2024,
+      "label": "2024-25",
+      "era": "validate",
+      "role": "validate",
+      "sha256": "e44c213c1a80403a21543107a25e4ba5d2e1d409db9a8185805bd3990d6e5c02"
+    }
+  ],
+  "shots": 48003,
+  "games": 6718,
+  "cutoff_seconds": 1110,
+  "bootstrap_replicates": 2000,
+  "completed_at_utc": "2026-09-24T17:41:39.024329+00:00",
+  "versions": {
+    "numpy": "2.0.2",
+    "pandas": "2.3.3",
+    "scipy": "1.13.1",
+    "scikit-learn": "1.6.1",
+    "matplotlib": "3.9.4"
+  },
+  "source_sha256": {
+    "src/Diagnostic.py": "5465757f5d66ead4ebdfc7871ea05e44f1f8cbdd2bc06300adb371b3d2fbcb42",
+    "src/GP_regression.py": "1e17ffcb779e5bd91a839bca9d14deedab6b46ebe248b46bf53a293dfb49b433",
+    "src/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/analysis.py": "b180cf45b3050ec8714ebee1ce8389c3dd544d8fabab30c7d365f8d23f9ea1e2",
+    "src/decomposition.py": "f6a5a1e7eba8052587a2f898c9fa4c662922d6076612547c554acf32e42af0da",
+    "src/diagnostic_shot_location.py": "e6b84daf8e9095c4047553e9f3d5fe339fcbefcb4134c6f7e2ead9dda90fa23d",
+    "src/empty_net_frequency.py": "b72193363a3f15d27216f9bfb9ace424077ef11a2541b3ebbf97a106878dff10",
+    "src/paths.py": "472a496d606d41369d55ecbe6f8577beae29cf4267dbb414939de05c7eeaef5e",
+    "src/results.py": "796e6505ccffba38f8e1a6d3693e17004f7a9e9aa54b1436b4a496126ab4d1ac"
+  },
+  "warnings": [
+    "Both GP fits reached the WhiteKernel noise-level lower bound of 1e-6. Hyperparameter-bound sensitivity has not been tested."
+  ]
+}

@@ -1,13 +1,8 @@
+"""Repository paths. Importing this module does not create directories."""
 from pathlib import Path
 
-# Root of the project
 ROOT = Path(__file__).resolve().parent.parent
-
-# Standard directories
-DATA_DIR = ROOT / "data"
+# Honor existing checkouts using Data/, including on case-sensitive filesystems.
+DATA_DIR = ROOT / "Data" if (ROOT / "Data").is_dir() else ROOT / "data"
 MODELS_DIR = ROOT / "models"
 RESULTS_DIR = ROOT / "Results"
-
-# Ensure they exist
-for d in [DATA_DIR, MODELS_DIR, RESULTS_DIR]:
-    d.mkdir(parents=True, exist_ok=True)
