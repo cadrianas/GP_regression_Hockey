@@ -1,4 +1,4 @@
-# Corrected analysis: 24 September 2026
+# Corrected analysis: 18 October 2026
 
 All 11 configured season files passed input validation. The analysis includes shots taken by the trailing team while down two goals in the third period, from 0:00 through 18:30. Games are identified by season and game ID. The 2025–26 file is outside the study period.
 
@@ -17,12 +17,15 @@ The pooled training sample contains 43,094 shots from 6,026 games. Mean xGoal pe
 | Early | 0.01117 | 0.00917 | 14/19 |
 | Recent | 0.00734 | 0.00653 | 17/19 |
 
-The recent-era GP has lower prediction error than the early-era GP and the three recent-era baselines on this held-out season. Coverage is descriptive: 19 correlated bins from one season do not establish calibration. Both GP fits reached the residual white-noise lower bound; sensitivity to that bound remains unchecked.
+The recent-era GP has lower prediction error than the early-era GP and the three recent-era baselines on this held-out season. Coverage is descriptive: 19 correlated bins from one season do not establish calibration. Both GP fits reached the residual white-noise lower bound; a targeted lower-bound check from 1e-10 to 1e-4 changes fitted means by at most 0.0000044 xG per shot and preserves both held-out coverage counts. This is a sensitivity check, not proof of general robustness.
 
 Shot distance is lower in the recent era in each analysis window. These results do not establish why shot selection changed. The sample includes goalie-absent shots before the cutoff, identified using the trailing team's explicit empty-net flag.
 
+Input validation and the GP lecture notes were reviewed in October 2026. The data selection and the principal numerical results are unchanged.
+
 ## Outputs
 
+- [Noise-bound sensitivity](noise_bound_sensitivity.csv)
 - [Era comparison figure](gp/figures/fig7_gp_comparison.png)
 - [Window summaries](decomposition/decomposition_pooled.csv)
 - [Training–validation bootstrap differences](decomposition/validation_check.csv)

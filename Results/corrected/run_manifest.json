@@ -3,7 +3,6 @@
   "input_files": [
     {
       "file": "shots_2014.csv",
-      "bytes": 60891327,
       "year": 2014,
       "label": "2014-15",
       "era": "early",
@@ -12,7 +11,6 @@
     },
     {
       "file": "shots_2015.csv",
-      "bytes": 60830807,
       "year": 2015,
       "label": "2015-16",
       "era": "early",
@@ -21,7 +19,6 @@
     },
     {
       "file": "shots_2016.csv",
-      "bytes": 61718381,
       "year": 2016,
       "label": "2016-17",
       "era": "early",
@@ -30,7 +27,6 @@
     },
     {
       "file": "shots_2017.csv",
-      "bytes": 66670644,
       "year": 2017,
       "label": "2017-18",
       "era": "early",
@@ -39,7 +35,6 @@
     },
     {
       "file": "shots_2018.csv",
-      "bytes": 65366469,
       "year": 2018,
       "label": "2018-19",
       "era": "early",
@@ -48,7 +43,6 @@
     },
     {
       "file": "shots_2019.csv",
-      "bytes": 58400036,
       "year": 2019,
       "label": "2019-20",
       "era": "early",
@@ -57,7 +51,6 @@
     },
     {
       "file": "shots_2020.csv",
-      "bytes": 45266252,
       "year": 2020,
       "label": "2020-21",
       "era": "early",
@@ -66,7 +59,6 @@
     },
     {
       "file": "shots_2021.csv",
-      "bytes": 68216389,
       "year": 2021,
       "label": "2021-22",
       "era": "early",
@@ -75,7 +67,6 @@
     },
     {
       "file": "shots_2022.csv",
-      "bytes": 68739878,
       "year": 2022,
       "label": "2022-23",
       "era": "recent",
@@ -84,7 +75,6 @@
     },
     {
       "file": "shots_2023.csv",
-      "bytes": 69293158,
       "year": 2023,
       "label": "2023-24",
       "era": "recent",
@@ -93,7 +83,6 @@
     },
     {
       "file": "shots_2024.csv",
-      "bytes": 68879950,
       "year": 2024,
       "label": "2024-25",
       "era": "validate",
@@ -105,8 +94,9 @@
   "games": 6718,
   "cutoff_seconds": 1110,
   "bootstrap_replicates": 2000,
-  "completed_at_utc": "2026-09-24T17:41:39.024329+00:00",
+  "completed_at_utc": "2026-10-18T11:33:39.681676+00:00",
   "versions": {
+    "python": "3.9.6",
     "numpy": "2.0.2",
     "pandas": "2.3.3",
     "scipy": "1.13.1",
@@ -117,14 +107,45 @@
     "src/Diagnostic.py": "5465757f5d66ead4ebdfc7871ea05e44f1f8cbdd2bc06300adb371b3d2fbcb42",
     "src/GP_regression.py": "1e17ffcb779e5bd91a839bca9d14deedab6b46ebe248b46bf53a293dfb49b433",
     "src/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "src/analysis.py": "b180cf45b3050ec8714ebee1ce8389c3dd544d8fabab30c7d365f8d23f9ea1e2",
+    "src/analysis.py": "dd9a8d368e6f6d263994b0acf9a472f62936fcfecd988776c8d096643f5a5b90",
     "src/decomposition.py": "f6a5a1e7eba8052587a2f898c9fa4c662922d6076612547c554acf32e42af0da",
     "src/diagnostic_shot_location.py": "e6b84daf8e9095c4047553e9f3d5fe339fcbefcb4134c6f7e2ead9dda90fa23d",
     "src/empty_net_frequency.py": "b72193363a3f15d27216f9bfb9ace424077ef11a2541b3ebbf97a106878dff10",
+    "src/noise_sensitivity.py": "4c53b4502b9d71fa363a2dbb805a08c059e722d9e980b56bf074f59732d17c30",
     "src/paths.py": "472a496d606d41369d55ecbe6f8577beae29cf4267dbb414939de05c7eeaef5e",
     "src/results.py": "796e6505ccffba38f8e1a6d3693e17004f7a9e9aa54b1436b4a496126ab4d1ac"
   },
   "warnings": [
-    "Both GP fits reached the WhiteKernel noise-level lower bound of 1e-6. Hyperparameter-bound sensitivity has not been tested."
-  ]
+    "Pointwise intervals condition on fitted hyperparameters and diagonal sampling variances.",
+    "Both default GP fits reach the residual-noise lower bound. See noise_bound_sensitivity.csv for the targeted bound check."
+  ],
+  "noise_lower_bounds_checked": [
+    1e-10,
+    1e-08,
+    1e-06,
+    0.0001
+  ],
+  "documentation_only_revision": {
+    "date": "2026-10-21",
+    "executable_ast_unchanged": true,
+    "verification": "All 19 existing tests passed; executable syntax unchanged after removing docstrings.",
+    "source_sha256": {
+      "src/analysis.py": "6274383abaa39ddeb8b9dedb337097b0bb9befa15452c5c992072c113fab42a0",
+      "src/results.py": "448e9593414b58cc07fef23325121f44307288c8e9e3270ac5e6049cc74d4c19",
+      "src/paths.py": "676dbc55e26448df85ad4cce8a54c580b435582f78f35e86a1d5800ed58f35e6",
+      "src/__init__.py": "0b1be080e42dbf2ddc22b59ac7ebecddddfb8fdd9cc74d36a16f3615be25d98a",
+      "src/GP_regression.py": "0a981d5b110e3f118eb542acfe102df7241fadf288bfda2e2066b24086257204",
+      "src/Diagnostic.py": "a239e66a57a3a0d1713680c450015360aea8a06abcbbb5cf806cb7fd4f39d151",
+      "src/decomposition.py": "30d71c15f87f877cf5deb181f7129a2e5a6fd920cf7916e64d95a2b1984f70cf",
+      "src/diagnostic_shot_location.py": "e224e60147e78122531ae30bdbf8b2d55c2e9d6d85ab5ab38b64f9a1c1e9d2a3",
+      "src/empty_net_frequency.py": "553ebe87d93dd2aa71cfa2135bd5a2a3642dbbfd5a63801b7f856feed242b741",
+      "src/noise_sensitivity.py": "84add4a2851d6981da6390bb701b9bec1be551f743b2128e70c0fee4493cf566",
+      "tests/test_analysis.py": "3f27de67ad073d2223e3b3fd6295ec124d55402c0914572dce7206c7e8ea362b"
+    },
+    "fit_interpretation_comments": "Clarified smoothing, baseline restrictions, and later-season plot interpretation; AST checked unchanged.",
+    "fit_interpretation_source_sha256": {
+      "src/analysis.py": "f55243b10477bbc2ec656cd6dce7140b72afc5692e5bd6e0997025fcfe36dabd",
+      "src/results.py": "7c743b240a54aa995310e240dd5764933a97f6b15c46abc655e04cfc53fa55b3"
+    }
+  }
 }

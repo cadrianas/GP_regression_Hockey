@@ -23,6 +23,7 @@ from src.results import baseline_predictions
 
 
 def raw_shot(**overrides):
+    """Create a known eligible row; override one condition to test exclusion."""
     row = dict(season=2023, game_id=20001, period=3, time=2500,
                homeTeamGoals=0, awayTeamGoals=2, homeTeamCode="A", awayTeamCode="B",
                teamCode="A", xGoal=.1, homeEmptyNet=0, awayEmptyNet=0,
@@ -44,6 +45,7 @@ def clustered_sample():
 
 
 class SampleTests(unittest.TestCase):
+    """Check eligibility, identity, weighting, and time-window edge cases."""
     def test_repeated_game_ids_remain_separate(self):
         a = filter_shots(pd.DataFrame([raw_shot()]), 2023)
         b = filter_shots(pd.DataFrame([raw_shot(season=2024)]), 2024)
@@ -67,11 +69,25 @@ class SampleTests(unittest.TestCase):
         self.assertEqual(assign_bins([0, 300, 1110], WINDOW_EDGES).tolist(), [0, 1, 3])
 
     def test_bad_source_data_is_rejected(self):
-        for overrides in [dict(season=2022), dict(xGoal=np.nan), dict(xGoal=1.2), dict(homeEmptyNet=2)]:
+        for overrides in [dict(season=2022), dict(xGoal=np.nan), dict(xGoal=1.2), dict(homeEmptyNet=2),
+                          dict(homeTeamGoals=-1), dict(homeTeamGoals=.5, awayTeamGoals=2.5),
+                          dict(period=3.5), dict(game_id=0), dict(homeTeamCode=None),
+                          dict(awayTeamCode="A"), dict(teamCode="UNKNOWN")]:
             with self.subTest(overrides=overrides), self.assertRaises(ValueError):
                 filter_shots(pd.DataFrame([raw_shot(**overrides)]), 2023)
         with self.assertRaisesRegex(ValueError, "Missing required"):
             filter_shots(pd.DataFrame([raw_shot()]).drop(columns="awayEmptyNet"), 2023)
+
+    def test_shot_ids_are_unique_within_games_not_across_games(self):
+        frame = pd.DataFrame([raw_shot(shotID=0), raw_shot(shotID=0, game_id=20002)])
+        self.assertEqual(len(filter_shots(frame, 2023)), 2)
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            filter_shots(pd.concat([frame, frame.iloc[[0]]]), 2023)
+
+    def test_invalid_bin_edges_are_rejected(self):
+        for edges in [[0], [0, 10, 5], [0, 10, 10], [0, np.nan, 20]]:
+            with self.subTest(edges=edges), self.assertRaisesRegex(ValueError, "Bin edges"):
+                assign_bins([1], edges)
 
     def test_missing_files_fail_before_loading(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -118,6 +134,7 @@ class SampleTests(unittest.TestCase):
 
 
 class ModelTests(unittest.TestCase):
+    """Check GP variance units and latent-versus-observation uncertainty."""
     def setUp(self):
         self.bins = pd.DataFrame({"midpoint": np.linspace(30, 1095, 8),
                                   "mean_xG": [.06, .065, .063, .065, .07, .073, .085, .10],
@@ -166,11 +183,12 @@ class ModelTests(unittest.TestCase):
 
 
 class EntryPointTests(unittest.TestCase):
+    """Keep imports safe and reject incomplete inputs before output creation."""
     def test_imports_do_not_run_analyses(self):
         with patch("pandas.read_csv", side_effect=AssertionError("Import read data")):
             with contextlib.redirect_stdout(io.StringIO()) as output:
                 for name in ["GP_regression", "decomposition", "diagnostic_shot_location",
-                             "empty_net_frequency", "results", "Diagnostic"]:
+                             "empty_net_frequency", "results", "Diagnostic", "noise_sensitivity"]:
                     importlib.reload(importlib.import_module("src." + name))
             self.assertEqual(output.getvalue(), "")
 

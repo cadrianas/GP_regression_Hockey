@@ -1,4 +1,8 @@
-"""Descriptive goalie, location, and shot-type comparisons using shared eras."""
+"""Inspect sample composition: goalie absence, distance, types, and locations.
+
+These descriptive checks suggest explanations to investigate; they do not
+establish why the GP trajectories differ or identify a causal tactical effect.
+"""
 from pathlib import Path
 import sys
 
@@ -15,6 +19,8 @@ def goalie_summary(train):
 
     This is not the share of games with a goalie pull, nor time spent pulled.
     """
+    # The input already contains only eligible trailing-team attempts, so the
+    # flag refers to that shooting team's absent goalie, not the opposing net.
     result = train.groupby("season").agg(n_shots=("is_goalie_pull", "size"),
                                           goalie_absent_shots=("is_goalie_pull", "sum"))
     result["goalie_pull_shot_pct"] = 100 * result.goalie_absent_shots / result.n_shots
@@ -22,6 +28,7 @@ def goalie_summary(train):
 
 
 def analyze(full, output):
+    """Save training-sample diagnostics without fitting or changing a GP."""
     train = full[full.role == "train"].copy()
     required = {"shotDistance", "shotType", "xCordAdjusted", "yCordAdjusted"}
     if not required.issubset(train.columns):
@@ -29,6 +36,8 @@ def analyze(full, output):
     goalie_summary(train).to_csv(output / "goalie_pull_frequency.csv", index=False)
     rows = []
     for season, df in train.groupby("season"):
+        # Distance summaries use nonmissing distances; n_distance makes that
+        # denominator visible separately from the season's total shot count.
         distance = df.shotDistance.dropna()
         rows.append({"season": season, "n_shots": len(df), "n_distance": len(distance),
                      "mean_distance": distance.mean(), "median_distance": distance.median(),
@@ -45,11 +54,15 @@ def analyze(full, output):
 
     # Compare shot-weighted distance with whole-game resampling, just as for xGoal.
     distance_data = train.dropna(subset=["shotDistance"]).copy()
+    # Adapt the shared numeric-mean bootstrap, whose value column is named
+    # xGoal, to resample DISTANCE in feet. This is a copy; source xG is intact.
+    # The returned mean_xG field below therefore holds a mean DISTANCE here.
     distance_data["xGoal"] = distance_data.shotDistance
     early, draws_e = cluster_bootstrap(distance_data[distance_data.era == "early"], seed=42)
     recent, draws_r = cluster_bootstrap(distance_data[distance_data.era == "recent"], seed=43)
     if not early.index.equals(recent.index):
         raise ValueError("Both eras must populate the same distance windows")
+    # Recent minus early distance, with uncertainty from both era samples.
     lo, hi = np.nanpercentile(draws_r - draws_e, [2.5, 97.5], axis=0)
     pd.DataFrame({"window": [WINDOW_LABELS[w] for w in early.index],
                   "early_distance_ft": early.mean_xG.to_numpy(),
@@ -67,8 +80,11 @@ def analyze(full, output):
         hist, _, _ = np.histogram2d(xy.iloc[:, 0], xy.iloc[:, 1], bins=edges)
         if hist.sum() == 0:
             raise ValueError(f"No coordinates within rink bounds for {era}")
+        # Normalise each era separately: compare spatial composition, not raw
+        # counts from eras containing different numbers of seasons and shots.
         histograms[era] = 100 * hist / hist.sum()
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), layout="constrained")
+    # A shared colour scale makes equal colours mean equal percentages.
     vmax = max(h.max() for h in histograms.values())
     for ax, (era, hist) in zip(axes, histograms.items()):
         im = ax.pcolormesh(*edges, hist.T, cmap="YlOrRd", vmin=0, vmax=vmax)

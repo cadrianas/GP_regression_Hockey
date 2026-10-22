@@ -27,7 +27,7 @@ To understand GPs, you must understand two key properties of MVNs:
 2.  **Conditioning:** If you observe the values of one set of variables, the conditional distribution of the remaining variables is *still* Gaussian.
 
 ### 2.2 From MVN to GP
-Imagine an MVN with 10 dimensions. We can plot a single sample from this MVN as 10 discrete points. If we increase the dimensions to 100, 1000, and eventually $\infty$, the discrete points merge into a continuous curve. This is what it means to sample a function from a GP prior.
+Imagine an MVN with 10 dimensions. We can plot a single sample from this MVN as 10 discrete points. Sampling the joint distribution at more input locations gives a denser set of function values. Whether these values trace a continuous or differentiable function depends on the kernel; smooth kernels such as RBF and Matérn support smooth sample paths.
 
 ---
 
@@ -39,10 +39,10 @@ Before seeing any data, we define our belief about what the function looks like.
 ### 3.2 Adding Observations (The Posterior)
 Suppose we have some training data (observations): $X_{train}$ and $y_{train}$. We want to predict the function values $f_{test}$ at some new test points $X_{test}$.
 
-Because of the GP definition, the joint distribution of the training data and the test data is a massive Multivariate Normal:
+Let $K$ denote the latent-function covariance and $D$ the observation-noise covariance. The joint distribution of noisy training observations and latent test values is multivariate normal, with training block $K_y = K_{train,train} + D$:
 
 $$
-\begin{bmatrix} y_{train} \\ f_{test} \end{bmatrix} \sim \mathcal{N} \left( \begin{bmatrix} \mu_{train} \\ \mu_{test} \end{bmatrix}, \begin{bmatrix} K_{train, train} & K_{train, test} \\ K_{test, train} & K_{test, test} \end{bmatrix} \right)
+\begin{bmatrix} y_{train} \\ f_{test} \end{bmatrix} \sim \mathcal{N} \left( \begin{bmatrix} \mu_{train} \\ \mu_{test} \end{bmatrix}, \begin{bmatrix} K_y & K_{train, test} \\ K_{test, train} & K_{test, test} \end{bmatrix} \right)
 $$
 
 ### 3.3 Conditioning
@@ -51,8 +51,8 @@ By applying the conditioning property of Gaussians, we can calculate the distrib
 $$f_{test} | X_{test}, X_{train}, y_{train} \sim \mathcal{N}(\mu_{post}, \Sigma_{post})$$
 
 Where:
-*   $\mu_{post} = K_{test, train} [K_{train, train}]^{-1} y_{train}$
-*   $\Sigma_{post} = K_{test, test} - K_{test, train} [K_{train, train}]^{-1} K_{train, test}$
+*   $\mu_{post} = \mu_{test} + K_{test, train} K_y^{-1}(y_{train} - \mu_{train})$
+*   $\Sigma_{post} = K_{test, test} - K_{test, train} K_y^{-1} K_{train, test}$
 
 **Interpretation:** 
 *   The mean prediction $\mu_{post}$ is a linear combination of the observed values. 
@@ -74,7 +74,7 @@ $k(x, x') = \sigma^2 \exp\left(-\frac{(x - x')^2}{2l^2}\right)$
 The Matérn class is a generalization of the RBF. It is governed by a parameter $\nu$ that controls smoothness.
 *   $\nu \to \infty$: Equivalent to RBF (infinitely smooth).
 *   $\nu = 5/2$: Function is twice differentiable.
-*   **Why use Matérn?** Real-world physical systems (like sports dynamics, financial markets, or terrain) are rarely perfectly smooth. They have sudden shifts or "roughness". Matérn is more realistic for these scenarios.
+*   **Why use Matérn?** Real-world physical systems (like sports dynamics, financial markets, or terrain) are rarely perfectly smooth. They have sudden shifts or "roughness". Matérn permits less smooth functions than RBF, but that assumption must be assessed for the quantity being modeled; it does not itself model discontinuities.
 
 ### 4.3 White Noise Kernel
 $k(x, x') = \sigma_{noise}^2$ if $x = x'$, else $0$.
@@ -102,10 +102,10 @@ If the noise varies per observation (**heteroscedasticity**), we add a diagonal 
 ### Advantages
 1.  **Principled Uncertainty:** GP doesn't just give a point estimate; it gives a full predictive distribution (credible intervals).
 2.  **Flexibility:** It can model highly non-linear functions without needing to specify a polynomial degree or architecture manually.
-3.  **Hyperparameter Tuning:** Hyperparameters (like lengthscale and noise) can be optimized by maximizing the Marginal Likelihood, which inherently penalizes complex models and prevents overfitting.
+3.  **Hyperparameter Tuning:** Hyperparameters (like lengthscale and noise) can be optimized by maximizing the Marginal Likelihood, which balances data fit against a complexity penalty. This does not guarantee protection against overfitting; held-out checks and sensitivity analysis still matter.
 
 ### Disadvantages
-1.  **Computational Complexity:** Inverting the $N \times N$ covariance matrix takes $\mathcal{O}(N^3)$ time and $\mathcal{O}(N^2)$ memory. GPs struggle when $N > 10,000$ points without using sparse approximations.
+1.  **Computational Complexity:** Factoring the $N \times N$ covariance matrix with Cholesky decomposition takes $\mathcal{O}(N^3)$ time and $\mathcal{O}(N^2)$ memory. GPs struggle when $N > 10,000$ points without using sparse approximations.
 2.  **Kernel Selection:** Choosing the right kernel requires domain knowledge.
 3.  **Interpretability:** Unlike linear regression, you don't get simple $\beta$ coefficients to interpret feature importance easily.
 
@@ -113,7 +113,13 @@ If the noise varies per observation (**heteroscedasticity**), we add a diagonal 
 
 ## 7. Applied Example: HockeyBayes
 
-In the context of the **HockeyBayes** project:
-*   **Why GP?** We don't know the mathematical equation for how a hockey team's expected goals (xG) change over time within a period. A GP lets the data dictate the trajectory shape while providing rigorous confidence bounds (credible intervals).
-*   **Kernel Choice:** $Constant \times \text{Matérn}(5/2) + \text{WhiteNoise}$. We use Matérn instead of RBF because hockey play is subjected to discrete breaks (whistles, penalties, line changes) making the underlying momentum process slightly rough.
-*   **Heteroscedastic Noise:** We pass the standard error squared (`se_sq`) of each time bin into the `alpha` parameter. This forces the GP to trust bins with many shots (low variance) more than bins with very few shots (high variance), correctly propagating uncertainty into the final plot.
+In this project the observations are **mean MoneyPuck xGoal per shot in time bins**, pooled across eligible games. The GP models that average trajectory, not individual-game momentum or scoring-event probability directly.
+
+- **Why GP?** Estimate a smooth relationship between third-period time and average shot quality without imposing a straight line or exponential curve. The fit is still governed by the chosen kernel, its bounds, and the data.
+- **Kernel:** constant scale × Matérn 5/2 describes a smooth latent trajectory; WhiteKernel adds fitted independent residual variance. Matérn 5/2 is less restrictive about smoothness than RBF. Whistles and line changes do not by themselves justify this kernel for a pooled average.
+- **Sampling error:** whole games are resampled within each season to estimate each bin mean's variance. Shots within a game are not treated as independent. A bin with more shots is not guaranteed to have lower variance; clustering and shot variability also matter.
+- **Normalization:** with `normalize_y=True`, the implementation passes `alpha = se_sq / std(y)**2`. Passing unscaled `se_sq` would mix original and normalized units.
+- **Covariance limitation:** joint game resampling preserves cross-bin movements, but the fitted GP uses only marginal bin variances in its diagonal `alpha`. It does not include the full sampling covariance between bins.
+- **Latent interval:** the shaded curve interval describes uncertainty in the smooth function, conditional on the fitted hyperparameters and estimated sampling variances. It is pointwise, not a simultaneous band or a guarantee of coverage.
+- **Held-out prediction interval:** adds fitted residual variance and the held-out bin mean's estimated sampling variance. It differs from the latent interval shown around the smooth curve.
+- **Interpretation:** observed changes are descriptive. They do not identify tactical adaptation or a causal effect of time pressure. MoneyPuck xGoal is treated as fixed; its own model uncertainty is not propagated.

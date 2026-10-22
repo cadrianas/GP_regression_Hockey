@@ -33,3 +33,5 @@ htmlcov/
 *.swp
 *.swo
 *~
+
+gaussian_processes_lecture_notes.md

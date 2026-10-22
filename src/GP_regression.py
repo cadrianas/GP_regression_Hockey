@@ -1,4 +1,8 @@
-"""Separate GP trajectories for 2014–21 and 2022–23 starting seasons."""
+"""Fit era-specific GPs and save curve, interval, and validation displays.
+
+This script visualises the shared GP implementation. results.py additionally
+compares it with simpler baselines; it does not use a different GP definition.
+"""
 from pathlib import Path
 import sys
 
@@ -12,16 +16,21 @@ from src.analysis import (PULL_CUTOFF, make_bins, fit_gp, predict_latent,
 
 
 def analyze(full, output):
+    """Save fine-bin data, latent curves, and later-season prediction checks."""
+    # Build observations for all three roles, but fit models on training eras only.
     bins = {era: make_bins(full[full.era == era], era) for era in ["early", "recent", "validate"]}
     models = {era: fit_gp(bins[era], era) for era in ["early", "recent"]}
     for era, table in bins.items():
         table.to_csv(output / f"gp_bin_data_{era}.csv", index=False)
     figdir = output / "figures"
     figdir.mkdir(exist_ok=True)
+    # Query points make a smooth display. They are not 500 training observations.
     grid = np.linspace(0, PULL_CUTOFF, 500)
     curves, validations = {}, []
     titles = {"early": "2014–15 through 2021–22", "recent": "2022–23 through 2023–24"}
     for era, model in models.items():
+        # Function uncertainty excludes new-observation white noise. The band
+        # conditions on fitted hyperparameters and supplied sampling variances.
         mean, std = predict_latent(model, grid)
         curves[era] = mean, std
         pd.DataFrame({"time_s": grid, "mu": mean, "std": std,
@@ -29,6 +38,8 @@ def analyze(full, output):
                           output / f"gp_results_{era}.csv", index=False)
         valid = bins["validate"]
         vm, vs = predict_latent(model, valid.midpoint)
+        # A held-out BIN MEAN has additional residual and sampling uncertainty;
+        # its prediction interval is wider than the corresponding latent band.
         ps = predictive_std(model, vs, valid.se_sq)
         validation = pd.DataFrame({"era": era, "midpoint": valid.midpoint,
                                    "observed": valid.mean_xG, "predicted": vm,
@@ -41,6 +52,8 @@ def analyze(full, output):
         ax.plot(grid, mean, label="GP latent mean")
         ax.fill_between(grid, mean - 1.96 * std, mean + 1.96 * std, alpha=.2,
                         label="Pointwise 95% latent interval")
+        # Symmetric normal-approximation error bars based on bootstrap SEs;
+        # these are not necessarily the bootstrap percentile intervals.
         ax.errorbar(bins[era].midpoint, bins[era].mean_xG,
                     yerr=1.96 * np.sqrt(bins[era].se_sq), fmt="o", label="Training bins ± 1.96 bootstrap SE")
         ax.errorbar(valid.midpoint, valid.mean_xG, yerr=1.96 * np.sqrt(valid.se_sq),
@@ -55,6 +68,8 @@ def analyze(full, output):
         print(f"{era}: {validation.inside_prediction_interval.sum()}/{len(valid)} held-out bins inside prediction intervals")
     pd.concat(validations, ignore_index=True).to_csv(output / "gp_validation.csv", index=False)
     fig, ax = plt.subplots(figsize=(9, 5))
+    # Compare the two latent trajectories. Visual band overlap is not a direct
+    # interval or hypothesis test for the difference between the functions.
     for era, (mean, std) in curves.items():
         ax.plot(grid, mean, label=titles[era])
         ax.fill_between(grid, mean - 1.96 * std, mean + 1.96 * std, alpha=.2)

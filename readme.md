@@ -16,7 +16,7 @@ There are three parts to the analysis:
 2. **Gaussian process regression.** Fit separate trajectories for the earlier and more recent seasons using one-minute averages. The model uses a Matérn 5/2 kernel with a constant scale and white noise, plus sampling variances estimated by resampling whole games within each season. The variances are rescaled to match the normalized target.
 3. **Diagnostics and validation.** Examine shot locations and shot types, and compare the fitted trajectories with a held-out season.
 
-The current GP configuration assigns 2014–15 through 2021–22 to the early group, 2022–23 through 2023–24 to the recent group, and 2024–25 to validation. Filenames use the starting year: `shots_2024.csv` contains 2024–25. The loader checks the source `season` field against this mapping.
+The current GP configuration assigns 2014–15 through 2021–22 to the early group, 2022–23 through 2023–24 to the recent group, and 2024–25 to validation. Filenames use the starting year: `shots_2024.csv` contains 2024–25. The loader checks the source `season` field against this mapping. It also rejects invalid scores or team identities and, when shotID is available, duplicate `(game_id, shotID)` pairs within a season. Some files reuse shotID between games, so shotID alone is not a unique key.
 
 ## Reading the results
 
@@ -24,7 +24,7 @@ The saved analyses show higher average xGoal late in the period and differences 
 
 They do not establish that time pressure causes better shot selection, or that analytics adoption explains the changes between seasons. Shot quality also depends on personnel, defensive play, game state, and the mix of shots that enter the sample. Deliberate tactical adaptation is one possible explanation, but this analysis cannot distinguish it from those alternatives.
 
-The analysis was rerun on September 2026 using all 11 configured season files (first analysis only used 3 seasons, then it was updated to include from the 2014-2015 season up to the 2025-2026 season). [Current results](Results/corrected/summary.md) include 43,094 training shots from 6,026 games and 4,909 held-out shots from 692 games. Mean xGoal rises from 0.06174 in the first window to 0.08062 in the last analyzed window, a descriptive increase of 30.6%. The recent-era GP has lower held-out RMSE than the early-era fit (0.00734 versus 0.01117); its nominal 95% prediction intervals cover 17 of 19 validation bins.
+The analysis was rerun on October 18, 2026 using all 11 configured season files, covering 2014–15 through 2024–25. The original exploratory analysis used three seasons. The 2025–26 file is outside the current study. [Current results](Results/corrected/summary.md) include 43,094 training shots from 6,026 games and 4,909 held-out shots from 692 games. Mean xGoal rises from 0.06174 in the first window to 0.08062 in the last analyzed window, a descriptive increase of 30.6%. The recent-era GP has lower held-out RMSE than the early-era fit (0.00734 versus 0.01117); its nominal 95% prediction intervals cover 17 of 19 validation bins.
 
 Current tables, figures, and a run manifest are in `Results/corrected/`. Superseded results, notebooks, and model artifacts have been removed.
 
@@ -47,6 +47,7 @@ python src/decomposition.py --output-dir Results/corrected/decomposition
 python src/GP_regression.py --output-dir Results/corrected/gp
 python src/diagnostic_shot_location.py --output-dir Results/corrected/diagnostics
 python src/results.py --output-dir Results/corrected/model_comparison
+python src/noise_sensitivity.py --output-dir Results/corrected
 ```
 
 These scripts read the shot data independently and write tables and figures under `Results/`. Raw season files are not included in Git. Dependencies are pinned to the versions used for verification with Python 3.9.
@@ -59,6 +60,7 @@ These scripts read the shot data independently and write tables and figures unde
 | `src/GP_regression.py` | Separate GP fits by era and held-out comparisons |
 | `src/diagnostic_shot_location.py` | Shot-location and shot-type diagnostics |
 | `src/analysis.py` | Shared filters, season definitions, bootstrap, and GP functions |
+| `src/noise_sensitivity.py` | Targeted residual-noise lower-bound check |
 | `src/paths.py` | Shared data and output paths |
 | `Results/corrected/` | Current tables, figures, results summary, and run manifest |
 | `tests/` | Regression tests for filtering, weighting, and model uncertainty |
@@ -86,6 +88,8 @@ python src/Diagnostic.py
 - Game keys combine season and game ID. Per-game summaries describe games with at least one qualifying shot; games with no qualifying shots are not represented in that denominator. Training–validation difference intervals include bootstrap uncertainty from both samples.
 - The era boundary is a modeling choice. Differences between seasons do not, by themselves, identify a structural break in 2022–23.
 - xGoal is itself a model estimate. This analysis treats it as fixed and does not propagate uncertainty from MoneyPuck's model.
+- Both default GP fits reach the residual-noise lower bound. A targeted check over normalized-variance lower bounds of 1e-10, 1e-8, 1e-6, and 1e-4 changes the fitted mean by at most 0.0000044 xG per shot over the plotted grid, and preserves the 14/19 and 17/19 held-out-bin coverage counts. This supports stability to this bound choice; it does not establish general robustness to kernel, era, or sample choices. See `Results/corrected/noise_bound_sensitivity.csv`.
+- The data contain unblocked shot attempts (saved shots, misses, and goals), excluding blocked shots, as described by [MoneyPuck](https://moneypuck.com/data.htm). The target is therefore average source-model shot quality among the selected recorded attempts.
 - League-wide averages can hide differences between teams. Team-level comparisons and sensitivity to alternative era boundaries remain useful next steps.
 
 ## Author and acknowledgements
