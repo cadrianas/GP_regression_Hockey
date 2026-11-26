@@ -62,6 +62,32 @@ The recent-era GP’s RMSE of 0.00734 measures prediction error in mean xGoal pe
 
 Starting the recent era at 2022–23 gives the lowest error among the boundaries examined. Because those boundaries were compared using the same held-out season, this is an exploratory finding. A further season would help check whether that choice continues to work. It does not establish a precise date when NHL tactics changed.
 
+## Main results plots
+
+### Shot quality through the period
+
+![Percentage changes in shot volume and mean xGoal across the four time windows](Results/corrected/talk/figures/slide1_volume_vs_quality.png)
+
+*Average shot quality is 30.6% higher in the final analyzed window than in the first five minutes. Shot volume rises by 7.4%, after accounting for the shorter final window. Volume is measured per sampled game per clock-window minute.*
+
+### Separating game situations
+
+![Recent-era GP curves by manpower state, alongside prediction error for alternative era boundaries](Results/corrected/talk/figures/slide4_manpower_and_era.png)
+
+*Left: the late rise disappears from the fitted curve when shots with the trailing team's goalie absent are excluded. This comparison alone cannot establish the cause. Right: starting at 2022–23 gives the lowest error among the tested boundaries on the same held-out season.*
+
+### The fit and the held-out season
+
+![Recent-era Gaussian process fit with training and held-out bin averages and their uncertainty](Results/corrected/gp/figures/fig6b_gp_recent.png)
+
+*The curve is fitted to 2022–23 and 2023–24. The 2024–25 points show how it compares with a season left out of fitting. Shading shows uncertainty in the underlying curve; the wider prediction intervals used for the 17-of-19 coverage result also include uncertainty in the held-out averages.*
+
+### Prediction error across models
+
+![Held-out RMSE for Gaussian process and parametric models fitted to early and recent seasons](Results/corrected/talk/figures/slide3_model_comparison.png)
+
+*Shorter bars mean predictions closer to the 2024–25 bin averages. The recent-era GP has the lowest error in this comparison. Performance on further seasons remains to be checked.*
+
 ## Running the project
 
 Create a Python environment and install dependencies:
