@@ -23,6 +23,22 @@ The configured split assigns:
 * **Baseline comparisons (`src/results.py`):** Evaluates `Constant`, `Linear`, and `Exponential` weighted-least-squares baselines alongside the GP on the held-out `2024–25` bins, and computes posterior derivative-ratio (`f'/f`) summaries.
 * **Manpower and era checks (`src/talk_sensitivity.py`):** Stratifies the GP fits by game state (all situations, goalie-in-net, and 5v5 even strength), checks held-out error across alternative `recent`-era start seasons (`2019–20` through `2023–24`), extracts fitted kernel hyperparameters, and writes four presentation figures.
 
+## Why a Gaussian process?
+
+The shape of the time trend is part of the question. A straight line assumes the same rate of change throughout the period, while an exponential curve ties the rate of change to the current level. A GP lets the fitted curve stay fairly flat for part of the period and bend more sharply later. It also allows decreases; the model does not impose the original hypothesis that shot quality should rise as time runs out.
+
+Each era has only 19 bin means, with different amounts of sampling uncertainty. The GP uses that uncertainty when fitting the curve, so an imprecise bin has less influence. Fitting at this scale is inexpensive, and the posterior gives uncertainty around the estimated trajectory. Those intervals remain conditional on the chosen kernel and fitted hyperparameters.
+
+The held-out comparison provides some support for this choice: the recent-era GP has lower prediction error than the fitted parametric baselines on 2024–25. One held-out season is limited evidence, especially when the era boundary has also been examined against that season.
+
+## Why the Matérn 5/2 kernel?
+
+The kernel describes how strongly shot-quality estimates at different times are related. Matérn 5/2 assumes a smooth underlying curve with two mean-square derivatives. That is a reasonable working assumption for averages over many games: neighboring minute bins should usually carry information about each other, while the rate of change can vary through the period. The smoothness assumption also supports the derivative analysis used here.
+
+The length scale sets how far that relationship extends in time. It is estimated from the training data by marginal likelihood, within bounds of 30 to 1,000 seconds. The fitted values are about 175 seconds for the early era and 318 seconds for the recent era. These describe the smoothness of the aggregate curves; they should not be interpreted as the duration of a team's tactical response.
+
+The constant kernel scales the size of variation in the curve. The added white-noise term allows residual variation beyond the supplied bootstrap sampling variances. Matérn 5/2 is a modeling choice: the current baseline comparison does not establish that it is the best kernel. Comparing other smoothness settings on additional held-out seasons would give a firmer basis for that choice.
+
 ## Key findings
 
 Across the 43,094 pooled training shots (`6,026` games), mean `xGoal` per shot increases from `0.06174` in `0–5 min` to `0.08062` in `15–18:30 min` (`+30.6%`), while shot volume per sampled game per clock-window minute increases by `+7.4%` (`0.3804` to `0.4084`).
