@@ -88,8 +88,8 @@ def analyze(full, output):
     vmax = max(h.max() for h in histograms.values())
     for ax, (era, hist) in zip(axes, histograms.items()):
         im = ax.pcolormesh(*edges, hist.T, cmap="YlOrRd", vmin=0, vmax=vmax)
-        ax.set(title=era.title(), xlabel="Adjusted X (ft)", ylabel="Adjusted Y (ft)", aspect="equal")
-    fig.colorbar(im, ax=axes, label="Percent of era's shots with coordinates in rink bounds")
+        ax.set(title=era.title(), xlabel="Position along the rink (adjusted feet)", ylabel="Position across the rink (adjusted feet)", aspect="equal")
+    fig.colorbar(im, ax=axes, label="Share of shots with recorded locations inside the rink (%)")
     figdir = output / "figures"
     figdir.mkdir(exist_ok=True)
     fig.savefig(figdir / "shot_location_heatmap.png", dpi=150)

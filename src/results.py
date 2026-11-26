@@ -100,8 +100,8 @@ def analyze(full, output):
         # Gaps from the lines describe prediction discrepancies; this plot alone
         # cannot distinguish underfitting from sampling variation or season shifts.
         # Assess underfitting with training fit/residuals as well as later errors.
-        ax.scatter(valid.midpoint, valid.mean_xG, color="black", label="2024-25 observed bins")
-        ax.set(xlabel="Seconds into third period", ylabel="Mean xGoal", title=f"Validation predictions: {era}")
+        ax.scatter(valid.midpoint, valid.mean_xG, color="black", label="2024–25 averages")
+        ax.set(xlabel="Seconds into third period", ylabel="Average shot quality (xG per shot)", title=f"Predicting 2024–25 from {era} seasons")
         ax.legend(fontsize=8)
         fig.tight_layout()
         fig.savefig(figdir / f"model_comparison_{era}.png", dpi=150)
@@ -118,11 +118,11 @@ def analyze(full, output):
                       "ratio_hi": high, "exponential_rate": exponential_rate}).to_csv(
                           output / f"derivative_ratio_{era}.csv", index=False)
         fig, ax = plt.subplots(figsize=(9, 4))
-        ax.plot(grid, median, label="GP f'/f posterior median")
-        ax.fill_between(grid, low, high, alpha=.2, label="Pointwise 95% posterior interval")
-        ax.axhline(exponential_rate, linestyle="--", color="red", label="Fitted exponential rate (point estimate)")
-        ax.set(xlabel="Seconds into third period", ylabel="f'/f (per second)",
-               title=f"Descriptive shape comparison: {era}")
+        ax.plot(grid, median, label="Estimated proportional rate of change")
+        ax.fill_between(grid, low, high, alpha=.2, label="95% uncertainty at each time")
+        ax.axhline(exponential_rate, linestyle="--", color="red", label="Rate implied by the exponential fit")
+        ax.set(xlabel="Seconds into third period", ylabel="Proportional change per second",
+               title=f"How quickly shot quality changes: {era} seasons")
         ax.legend(fontsize=8)
         fig.tight_layout()
         fig.savefig(figdir / f"derivative_ratio_{era}.png", dpi=150)

@@ -49,17 +49,17 @@ def analyze(full, output):
         validations.append(validation)
 
         fig, ax = plt.subplots(figsize=(9, 5))
-        ax.plot(grid, mean, label="GP latent mean")
+        ax.plot(grid, mean, label="Estimated shot quality")
         ax.fill_between(grid, mean - 1.96 * std, mean + 1.96 * std, alpha=.2,
-                        label="Pointwise 95% latent interval")
+                        label="95% uncertainty at each time")
         # Symmetric normal-approximation error bars based on bootstrap SEs;
         # these are not necessarily the bootstrap percentile intervals.
         ax.errorbar(bins[era].midpoint, bins[era].mean_xG,
-                    yerr=1.96 * np.sqrt(bins[era].se_sq), fmt="o", label="Training bins ± 1.96 bootstrap SE")
+                    yerr=1.96 * np.sqrt(bins[era].se_sq), fmt="o", label="Training averages with uncertainty")
         ax.errorbar(valid.midpoint, valid.mean_xG, yerr=1.96 * np.sqrt(valid.se_sq),
-                    fmt="^", label="2024–25 bins ± 1.96 bootstrap SE")
-        ax.set(xlabel="Seconds into third period", ylabel="Mean xGoal per shot",
-               title=f"GP fit: {titles[era]}", xlim=(0, PULL_CUTOFF))
+                    fmt="^", label="2024–25 averages with uncertainty")
+        ax.set(xlabel="Seconds into third period", ylabel="Average shot quality (xG per shot)",
+               title=f"Shot quality over time: {titles[era]}", xlim=(0, PULL_CUTOFF))
         ax.legend(fontsize=8)
         fig.tight_layout()
         name = "fig6a_gp_early.png" if era == "early" else "fig6b_gp_recent.png"
@@ -73,8 +73,8 @@ def analyze(full, output):
     for era, (mean, std) in curves.items():
         ax.plot(grid, mean, label=titles[era])
         ax.fill_between(grid, mean - 1.96 * std, mean + 1.96 * std, alpha=.2)
-    ax.set(xlabel="Seconds into third period", ylabel="Mean xGoal per shot",
-           title="Era comparison: pointwise 95% latent intervals")
+    ax.set(xlabel="Seconds into third period", ylabel="Average shot quality (xG per shot)",
+           title="Shot quality in earlier and recent seasons")
     ax.legend()
     fig.tight_layout()
     fig.savefig(figdir / "fig7_gp_comparison.png", dpi=150)

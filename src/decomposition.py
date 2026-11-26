@@ -87,23 +87,23 @@ def analyze(full, output):
     # clock-window duration; mean xG is already a per-shot quantity.
     x = np.arange(4)
     columns = ["shots_per_game_per_window_minute", "mean_xG", "xG_per_game_per_window_minute"]
-    labels = ["Shots / sampled game / window minute", "Mean xGoal per shot", "xG / sampled game / window minute"]
+    labels = ["Shots per sampled game\nper minute of window", "Average shot quality (xG per shot)", "Expected goals per sampled game\nper minute of window"]
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
     for ax, col, label in zip(axes, columns, labels):
         ax.bar(x, pooled[col])
         ax.set_xticks(x, WINDOW_LABELS, rotation=20)
         ax.set_ylabel(label)
-    fig.suptitle("Comeback shots: clock-window summaries, not time-at-risk rates")
+    fig.suptitle("Shots and chance quality through the third period")
     fig.tight_layout()
     fig.savefig(figdir / "fig1_decomposition_bars.png", dpi=150)
     plt.close(fig)
 
     # Indexed plot: each series is relative to its OWN first-window value.
     fig, ax = plt.subplots(figsize=(8, 4))
-    for col, label in zip(columns, ["Window-normalized shot volume", "Shot quality", "Window-normalized xG"]):
+    for col, label in zip(columns, ["Shots per game per minute of window", "Shot quality", "Expected goals per game per minute of window"]):
         ax.plot(x, pooled["idx_" + col], "o-", label=label)
     ax.set_xticks(x, WINDOW_LABELS)
-    ax.set_ylabel("Index relative to first window")
+    ax.set_ylabel("Relative to the first five minutes (1 = unchanged)")
     ax.legend()
     fig.tight_layout()
     fig.savefig(figdir / "fig2_indexed_trajectories.png", dpi=150)
@@ -115,7 +115,7 @@ def analyze(full, output):
     im = ax.imshow(pivot, aspect="auto", cmap="YlOrRd")
     ax.set_xticks(x, WINDOW_LABELS)
     ax.set_yticks(range(len(pivot)), pivot.index)
-    fig.colorbar(im, ax=ax, label="Mean xGoal per shot")
+    fig.colorbar(im, ax=ax, label="Average shot quality (xG per shot)")
     fig.tight_layout()
     fig.savefig(figdir / "fig_season_heatmap.png", dpi=150)
     plt.close(fig)
@@ -128,8 +128,8 @@ def analyze(full, output):
         ax.fill_between(x, comparison[prefix + "_ci_lo"].to_numpy(),
                         comparison[prefix + "_ci_hi"].to_numpy(), alpha=.2)
     ax.set_xticks(x, WINDOW_LABELS)
-    ax.set_ylabel("Mean xGoal per shot")
-    ax.set_title("Pointwise 95% game-cluster bootstrap intervals")
+    ax.set_ylabel("Average shot quality (xG per shot)")
+    ax.set_title("Training seasons compared with 2024–25")
     ax.legend()
     fig.tight_layout()
     fig.savefig(figdir / "fig5_validation.png", dpi=150)

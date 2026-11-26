@@ -134,8 +134,8 @@ def analyze(full, output):
     x = np.arange(len(WINDOW_LABELS))
     width = 0.36
     fig, ax = plt.subplots(figsize=(8.5, 4.8))
-    b1 = ax.bar(x - width / 2, vol_pct, width, label="Shot volume (shots / game / min)", color="#4C78A8")
-    b2 = ax.bar(x + width / 2, qual_pct, width, label="Shot quality (mean xGoal / shot)", color="#E45756")
+    b1 = ax.bar(x - width / 2, vol_pct, width, label="Shots per game per minute of window", color="#4C78A8")
+    b2 = ax.bar(x + width / 2, qual_pct, width, label="Average shot quality (xG per shot)", color="#E45756")
     ax.axhline(0, color="black", linewidth=0.8)
     for bar in list(b1) + list(b2):
         h = bar.get_height()
@@ -145,8 +145,8 @@ def analyze(full, output):
                 ha="center", va=va, fontsize=9, fontweight="bold")
     ax.set_xticks(x)
     ax.set_xticklabels(WINDOW_LABELS)
-    ax.set_ylabel("Change relative to 0–5 min (%)")
-    ax.set_title("Trailing by 2 in Period 3: Quality Jumps While Volume Barely Moves")
+    ax.set_ylabel("Change from the first five minutes (%)")
+    ax.set_title("How shots change while a team trails by two")
     ax.set_ylim(min(vol_pct.min(), -5) - 4, qual_pct.max() + 7)
     ax.legend(frameon=False, loc="upper left")
     _style_axis(ax)
@@ -161,22 +161,22 @@ def analyze(full, output):
     mean, std = predict_latent(gp_recent, grid)
     recent_row = manpower_df[(manpower_df.era == "recent") & (manpower_df.stratum == "all_situations")].iloc[0]
     fig, ax = plt.subplots(figsize=(8.5, 4.8))
-    ax.plot(grid, mean, color="#1f77b4", linewidth=2.4, label="GP latent mean (2022–24)")
+    ax.plot(grid, mean, color="#1f77b4", linewidth=2.4, label="Estimated shot quality")
     ax.fill_between(grid, mean - 1.96 * std, mean + 1.96 * std, color="#1f77b4", alpha=0.18,
-                    label="Pointwise 95% latent interval")
+                    label="95% uncertainty at each time")
     ax.errorbar(tr_b.midpoint, tr_b.mean_xG, yerr=1.96 * np.sqrt(tr_b.se_sq),
-                fmt="o", color="#1f77b4", alpha=0.75, markersize=5, label="Training bins (2022–24)")
+                fmt="o", color="#1f77b4", alpha=0.75, markersize=5, label="2022–23 and 2023–24 averages")
     ax.scatter(va_b.midpoint, va_b.mean_xG, color="#d62728", marker="^", s=55, zorder=5,
-               label="Held-out 2024–25 bins")
+               label="2024–25 averages")
     ax.text(0.03, 0.94,
-            f"Length scale: {recent_row.length_scale_s:.0f} s\n"
-            f"Held-out RMSE: {recent_row.val_rmse:.5f}\n"
-            f"95% PI coverage: {int(round(recent_row.val_coverage_pct * 19 / 100))}/19 bins",
+            f"Fitted time scale: {recent_row.length_scale_s:.0f} s\n"
+            f"2024–25 prediction error (RMSE): {recent_row.val_rmse:.5f}\n"
+            f"Within 95% prediction intervals: {int(round(recent_row.val_coverage_pct * 19 / 100))}/19 averages",
             transform=ax.transAxes, va="top", fontsize=9.5,
             bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#cccccc", alpha=0.9))
-    ax.set(xlim=(0, PULL_CUTOFF), xlabel="Seconds into third period", ylabel="Mean xGoal per shot",
-           title="Recent-Era GP Trajectory Generalizes to 2024–25")
-    ax.legend(frameon=False, loc="lower right", fontsize=9)
+    ax.set(xlim=(0, PULL_CUTOFF), xlabel="Seconds into third period", ylabel="Average shot quality (xG per shot)",
+           title="Comparing the recent-season fit with 2024–25")
+    ax.legend(frameon=True, loc="upper left", bbox_to_anchor=(0.02, 0.73), fontsize=8)
     _style_axis(ax)
     fig.tight_layout()
     fig.savefig(figdir / "slide2_gp_recent_fit.png", dpi=300)
@@ -201,18 +201,18 @@ def analyze(full, output):
     fig, ax = plt.subplots(figsize=(8.5, 4.5))
     early_vals = [comp_df[(comp_df.era == "early") & (comp_df.model == m)].rmse.iloc[0] for m in models_order]
     recent_vals = [comp_df[(comp_df.era == "recent") & (comp_df.model == m)].rmse.iloc[0] for m in models_order]
-    ax.barh(y_pos + h / 2, early_vals, h, label="Trained on Early (2014–22)", color="#9ecae1")
-    ax.barh(y_pos - h / 2, recent_vals, h, label="Trained on Recent (2022–24)", color="#1f77b4")
+    ax.barh(y_pos + h / 2, early_vals, h, label="Fitted to 2014–15 through 2021–22", color="#9ecae1")
+    ax.barh(y_pos - h / 2, recent_vals, h, label="Fitted to 2022–23 and 2023–24", color="#1f77b4")
     for idx, (ev, rv) in enumerate(zip(early_vals, recent_vals)):
         ax.text(ev + 0.0002, idx + h / 2, f"{ev:.5f}", va="center", fontsize=8.5)
         ax.text(rv + 0.0002, idx - h / 2, f"{rv:.5f}", va="center", fontsize=8.5, fontweight="bold")
     ax.set_yticks(y_pos)
     ax.set_yticklabels(models_order)
     ax.invert_yaxis()
-    ax.set_xlabel("Held-out 2024–25 RMSE (lower is better)")
-    ax.set_title("Matérn 5/2 GP Outperforms Parametric Baselines Out-of-Sample")
+    ax.set_xlabel("2024–25 prediction error (RMSE; lower is better)")
+    ax.set_title("Which model predicts 2024–25 more accurately?")
     ax.set_xlim(0, max(early_vals) * 1.2)
-    ax.legend(frameon=False, loc="lower right")
+    ax.legend(frameon=False, loc="lower right", fontsize=8)
     _style_axis(ax)
     fig.tight_layout()
     fig.savefig(figdir / "slide3_model_comparison.png", dpi=300)
@@ -222,26 +222,26 @@ def analyze(full, output):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.6))
     stratum_styles = {
         "all_situations": ("All situations", "#1f77b4", "-"),
-        "goalie_in_net": ("Goalie in net (excl. 6v5)", "#ff7f0e", "--"),
-        "five_on_five": ("5v5 even strength only", "#2ca02c", "-."),
+        "goalie_in_net": ("Trailing team's goalie in net", "#ff7f0e", "--"),
+        "five_on_five": ("Five-on-five play", "#2ca02c", "-."),
     }
     for sname, (label, color, ls) in stratum_styles.items():
         if sname in recent_gps:
             m, _ = predict_latent(recent_gps[sname], grid)
             ax1.plot(grid, m, color=color, linestyle=ls, linewidth=2.2, label=label)
-    ax1.set(xlim=(0, PULL_CUTOFF), xlabel="Seconds into third period", ylabel="Mean xGoal per shot",
-            title="Recent Era: Late Rise Is Driven by Goalie Pulls / Manpower")
+    ax1.set(xlim=(0, PULL_CUTOFF), xlabel="Seconds into third period", ylabel="Average shot quality (xG per shot)",
+            title="Shot quality in different game situations")
     ax1.legend(frameon=False, loc="upper left", fontsize=9)
     _style_axis(ax1)
 
     ax2.plot(boundary_df.recent_start_year, boundary_df.val_rmse, marker="o", color="#1f77b4", linewidth=2.2)
     chosen = boundary_df[boundary_df.recent_start_year == 2022].iloc[0]
     ax2.scatter([chosen.recent_start_year], [chosen.val_rmse], color="#d62728", s=90, zorder=5,
-                label="Chosen split (2022–23)")
+                label="Current starting season: 2022–23")
     ax2.set_xticks(boundary_df.recent_start_year)
     ax2.set_xticklabels([f"{y}-{str(y + 1)[-2:]}" for y in boundary_df.recent_start_year])
-    ax2.set(xlabel="Recent-era start season", ylabel="Held-out 2024–25 RMSE",
-            title="Era-Boundary Sensitivity (2024–25 Holdout)")
+    ax2.set(xlabel="First season used for the recent fit", ylabel="2024–25 prediction error (RMSE)",
+            title="How the starting season affects predictions")
     ax2.legend(frameon=False, loc="upper right", fontsize=9)
     _style_axis(ax2)
 
