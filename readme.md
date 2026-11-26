@@ -1,36 +1,42 @@
 # hockeybayes
 
-Gaussian process regression for NHL shot quality when a team is down two goals in the third period.
+Gaussian process regression for NHL shot quality when a team trails by two goals in the third period.
 
-Does a team generate better chances as time runs out? This project uses MoneyPuck shot data to examine how expected goals per shot change through the period, and whether that pattern holds across seasons. The question is about the chances teams create while trailing, rather than whether they eventually complete a comeback.
+This repository examines how expected goals per shot (`xGoal` from MoneyPuck) change over the first 18:30 of the third period, and how well models fit to earlier seasons predict the held-out `2024–25` season.
 
-The analysis starts with shot counts and average shot quality, then fits Gaussian processes to the time trajectories. Separating those quantities matters: a team can generate more expected goals by shooting more often, taking better shots, or both.
+## Study sample and data checks
 
-## Approach
+The scripts read MoneyPuck shot-level CSVs (`shots_2014.csv` through `shots_2024.csv`) from `DATA_DIR` in `src/paths.py`. Season `2025–26` (`shots_2025.csv`) sits outside the configured study window.
 
-The main scripts keep shots taken by the trailing team when the score difference is exactly two goals in the third period. They use MoneyPuck's `xGoal` value as the measure of shot quality and exclude shots after 18:30 of the period.
+`filter_shots` in `src/analysis.py` keeps unblocked shot attempts taken by the trailing team when the score difference is two goals in period 3, from `0:00` through `18:30` elapsed (`1110` seconds). It checks column presence, integer-valued scores and periods, `xGoal` bounds in `[0, 1]`, valid team codes, and unique `(game_id, shotID)` pairs within each season.
 
-There are three parts to the analysis:
+The configured split assigns:
+* `2014–15` through `2021–22` (`early`): 33,252 shots across 4,690 games
+* `2022–23` through `2023–24` (`recent`): 9,842 shots across 1,336 games
+* `2024–25` (`validate`, held out): 4,909 shots across 692 games
 
-1. **Decomposition.** Compare shot volume, mean xGoal, and total xG in five-minute windows. Exploratory ANOVA and Kruskal–Wallis tests compare game-mean distributions across seasons, with a correction for inspecting four windows. These tests use a different estimand from the shot-weighted summaries.
-2. **Gaussian process regression.** Fit separate trajectories for the earlier and more recent seasons using one-minute averages. The model uses a Matérn 5/2 kernel with a constant scale and white noise, plus sampling variances estimated by resampling whole games within each season. The variances are rescaled to match the normalized target.
-3. **Diagnostics and validation.** Examine shot locations and shot types, and compare the fitted trajectories with a held-out season.
+## Methods
 
-The current GP configuration assigns 2014–15 through 2021–22 to the early group, 2022–23 through 2023–24 to the recent group, and 2024–25 to validation. Filenames use the starting year: `shots_2024.csv` contains 2024–25. The loader checks the source `season` field against this mapping. It also rejects invalid scores or team identities and, when shotID is available, duplicate `(game_id, shotID)` pairs within a season. Some files reuse shotID between games, so shotID alone is not a unique key.
+* **Window decomposition (`src/decomposition.py`):** Summarizes shot counts and mean `xGoal` across four clock windows (`0–5 min`, `5–10 min`, `10–15 min`, `15–18:30 min`), normalized by clock-window duration (`5.0`, `5.0`, `5.0`, `3.5` minutes).
+* **Cluster bootstrap (`src/analysis.py`):** Resamples whole games within each season (`2000` replicates) to estimate bin-level sampling variances (`se_sq`) while preserving within-game shot correlation.
+* **Gaussian process regression (`src/GP_regression.py`):** Fits a Matérn 5/2 kernel with a constant scale and `WhiteKernel` to one-minute bin means (`19` bins through `18:30`), passing rescaled bootstrap variances via `alpha`.
+* **Baseline comparisons (`src/results.py`):** Evaluates `Constant`, `Linear`, and `Exponential` weighted-least-squares baselines alongside the GP on the held-out `2024–25` bins, and computes posterior derivative-ratio (`f'/f`) summaries.
+* **Manpower and era checks (`src/talk_sensitivity.py`):** Stratifies the GP fits by game state (all situations, goalie-in-net, and 5v5 even strength), checks held-out error across alternative `recent`-era start seasons (`2019–20` through `2023–24`), extracts fitted kernel hyperparameters, and writes four presentation figures.
 
-## Reading the results
+## Key findings
 
-The saved analyses show higher average xGoal late in the period and differences across seasons. Those patterns motivate fitting separate era trajectories instead of treating the whole decade as one sample.
+Across the 43,094 pooled training shots (`6,026` games), mean `xGoal` per shot increases from `0.06174` in `0–5 min` to `0.08062` in `15–18:30 min` (`+30.6%`), while shot volume per sampled game per clock-window minute increases by `+7.4%` (`0.3804` to `0.4084`).
 
-They do not establish that time pressure causes better shot selection, or that analytics adoption explains the changes between seasons. Shot quality also depends on personnel, defensive play, game state, and the mix of shots that enter the sample. Deliberate tactical adaptation is one possible explanation, but this analysis cannot distinguish it from those alternatives.
+Stratifying by manpower state in `Results/corrected/talk/manpower_sensitivity.csv` shows that this late-period jump in shot quality comes from pulled-goalie and special-teams situations before the `18:30` cutoff:
+* **All situations:** Mean `xGoal` rises `+26.8%` (`0.06059` to `0.07685`) in `early` and `+42.5%` (`0.06563` to `0.09352`) in `recent`.
+* **Goalie in net:** Mean `xGoal` changes by `-3.9%` (`0.06057` to `0.05821`) in `early` and `-11.3%` (`0.06506` to `0.05768`) in `recent`.
+* **5v5 only:** Mean `xGoal` changes by `-2.2%` (`0.05450` to `0.05330`) in `early` and `-9.5%` (`0.06121` to `0.05540`) in `recent`.
 
-The analysis was rerun on October 18, 2026 using all 11 configured season files, covering 2014–15 through 2024–25. The original exploratory analysis used three seasons. The 2025–26 file is outside the current study. [Current results](Results/corrected/summary.md) include 43,094 training shots from 6,026 games and 4,909 held-out shots from 692 games. Mean xGoal rises from 0.06174 in the first window to 0.08062 in the last analyzed window, a descriptive increase of 30.6%. The recent-era GP has lower held-out RMSE than the early-era fit (0.00734 versus 0.01117); its nominal 95% prediction intervals cover 17 of 19 validation bins.
+On the held-out `2024–25` season (`Results/corrected/model_comparison/model_comparison.csv`), the `recent`-era GP (`length_scale = 318.1 s`) achieves an RMSE of `0.00734` with `17/19` bins inside its nominal 95% prediction intervals, compared with `0.01142` for the `recent` exponential fit, `0.01173` for linear, `0.01440` for constant, and `0.01117` for the `early`-era GP (`length_scale = 175.0 s`). Shifting the `recent`-era start season in `Results/corrected/talk/era_boundary_sensitivity.csv` gives higher `2024–25` RMSE for `2019–20` (`0.00825`), `2020–21` (`0.00776`), `2021–22` (`0.00757`), and `2023–24` (`0.00784`).
 
-Current tables, figures, and a run manifest are in `Results/corrected/`. Superseded results, notebooks, and model artifacts have been removed.
+## Running the project
 
-## Running the analysis
-
-From the repository root, create a Python environment and install the libraries used by the main scripts:
+Create a Python environment and install dependencies:
 
 ```bash
 python3 -m venv .venv
@@ -38,64 +44,56 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-Download the shot-level CSVs from [MoneyPuck](https://moneypuck.com/data.htm). The main scripts look for `shots_2014.csv` through `shots_2024.csv` in the directory set by `DATA_DIR` in `src/paths.py`. The path uses an existing `Data/` directory, or falls back to `data/`. Each analysis accepts `--data-dir` and `--output-dir` to override the defaults.
-
-Season and era definitions live in `src/analysis.py`. The analysis commands require all configured files and stop with a list of missing inputs before writing outputs. `shots_2025.csv` is outside the configured study period.
+Download the `2014` through `2024` shot CSVs from [MoneyPuck](https://moneypuck.com/data.htm) into `Data/` (or pass `--data-dir` to any script). Run the unit tests and all analysis scripts together with:
 
 ```bash
+./run_all.sh
+```
+
+Or run individual scripts:
+
+```bash
+python -m unittest discover -s tests -v
 python src/decomposition.py --output-dir Results/corrected/decomposition
 python src/GP_regression.py --output-dir Results/corrected/gp
 python src/diagnostic_shot_location.py --output-dir Results/corrected/diagnostics
 python src/results.py --output-dir Results/corrected/model_comparison
 python src/noise_sensitivity.py --output-dir Results/corrected
+python src/talk_sensitivity.py --output-dir Results/corrected/talk
 ```
 
-These scripts read the shot data independently and write tables and figures under `Results/`. Raw season files are not included in Git. Dependencies are pinned to the versions used for verification with Python 3.9.
-
-## Repository guide
-
-| Path | Contents |
-| --- | --- |
-| `src/decomposition.py` | Window summaries, season comparisons, and bootstrap validation |
-| `src/GP_regression.py` | Separate GP fits by era and held-out comparisons |
-| `src/diagnostic_shot_location.py` | Shot-location and shot-type diagnostics |
-| `src/analysis.py` | Shared filters, season definitions, bootstrap, and GP functions |
-| `src/noise_sensitivity.py` | Targeted residual-noise lower-bound check |
-| `src/paths.py` | Shared data and output paths |
-| `Results/corrected/` | Current tables, figures, results summary, and run manifest |
-| `tests/` | Regression tests for filtering, weighting, and model uncertainty |
-| `requirements.txt` | Pinned analysis dependencies |
-| `gaussian_process_lecture_notes.md` | Background notes on Gaussian processes |
-
-`src/results.py` now reads the configured shot files directly and compares each era's GP with constant, linear, and exponential baselines. The commands above write its outputs to `Results/corrected/model_comparison/`. Derivative-ratio intervals come from jointly sampled latent GP trajectories; they are descriptive, not a formal test rejecting exponential behavior.
-
-Run the regression tests with:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-To inspect the available local season files without requiring the complete study sample:
+To inspect local CSV availability without requiring the full 11-season sample:
 
 ```bash
 python src/Diagnostic.py
 ```
 
-## Limits and unfinished work
+## Repository layout
 
-- The 18:30 cutoff does not exclude every pulled-goalie situation. The diagnostics use the trailing team's explicit empty-net flag and report a percentage of sampled shots, not games or playing time. The final window is labeled 15–18:30; volume comparisons are normalized by clock-window duration. They are not shooting rates per minute spent trailing by two, which would require game-state exposure data.
-- Whole games are resampled within seasons, preserving shot weights and joint bin movements. The GP uses the resulting marginal bin variances but does not model their full covariance. Its latent intervals are pointwise and conditional on fitted hyperparameters. Held-out prediction intervals additionally include validation sampling variance and fitted residual noise.
-- Game keys combine season and game ID. Per-game summaries describe games with at least one qualifying shot; games with no qualifying shots are not represented in that denominator. Training–validation difference intervals include bootstrap uncertainty from both samples.
-- The era boundary is a modeling choice. Differences between seasons do not, by themselves, identify a structural break in 2022–23.
-- xGoal is itself a model estimate. This analysis treats it as fixed and does not propagate uncertainty from MoneyPuck's model.
-- Both default GP fits reach the residual-noise lower bound. A targeted check over normalized-variance lower bounds of 1e-10, 1e-8, 1e-6, and 1e-4 changes the fitted mean by at most 0.0000044 xG per shot over the plotted grid, and preserves the 14/19 and 17/19 held-out-bin coverage counts. This supports stability to this bound choice; it does not establish general robustness to kernel, era, or sample choices. See `Results/corrected/noise_bound_sensitivity.csv`.
-- The data contain unblocked shot attempts (saved shots, misses, and goals), excluding blocked shots, as described by [MoneyPuck](https://moneypuck.com/data.htm). The target is therefore average source-model shot quality among the selected recorded attempts.
-- League-wide averages can hide differences between teams. Team-level comparisons and sensitivity to alternative era boundaries remain useful next steps.
+| Path | Contents |
+| --- | --- |
+| `src/analysis.py` | Data validation, filtering, cluster bootstrap, and GP helpers |
+| `src/decomposition.py` | Window summaries, season comparisons, and bootstrap checks |
+| `src/GP_regression.py` | Era-specific GP fits and `2024–25` validation plots |
+| `src/diagnostic_shot_location.py` | Shot distance, shot type, and goalie-pull diagnostics |
+| `src/results.py` | Parametric baseline comparisons and derivative-ratio intervals |
+| `src/noise_sensitivity.py` | Sensitivity check across `WhiteKernel` lower bounds (`1e-10` to `1e-4`) |
+| `src/talk_sensitivity.py` | Manpower stratification, era-boundary checks, hyperparameters, and slide figures |
+| `src/paths.py` | Shared data and output paths |
+| `Results/corrected/` | Current tables, figures, `summary.md`, and `run_manifest.json` |
+| `tests/test_analysis.py` | Unit tests for filtering, weighting, GP scaling, and CLI entry points |
+| `run_all.sh` | Runner for unit tests and all analysis scripts |
+| `requirements.txt` | Pinned Python dependencies |
 
-## Author and acknowledgements
+## Known limitations
+
+* Window volume rates divide by clock-window length (`5.0` or `3.5` minutes) because the shot-level CSVs lack exact time-spent-trailing-by-two exposure.
+* The GP uses marginal diagonal `se_sq` from the cluster bootstrap without cross-bin covariance, and `xGoal` is treated as fixed without propagating MoneyPuck model uncertainty.
+* Both default GP fits reach the `WhiteKernel` lower bound (`1e-6` in normalized units); `Results/corrected/noise_bound_sensitivity.csv` verifies that lowering this bound to `1e-10` or raising it to `1e-4` shifts fitted means by at most `0.0000044` xG per shot.
+* Per-game denominators include games with at least one qualifying shot.
+
+## Author and license
 
 Adriana-Stefania Ciupeanu
 
-Code license: GNU General Public License v3.0 (GPLv3), as stated for this project. A standalone license file still needs to be added.
-
-Grammarly and Google Jules were used during the project.
+Code license: GNU General Public License v3.0 (GPLv3). A standalone `LICENSE` file still needs to be added.

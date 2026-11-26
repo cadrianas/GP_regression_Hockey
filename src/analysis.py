@@ -7,7 +7,7 @@ Summarise the shots in broad time windows, then prepare finer bins for modelling
 Resample whole games within seasons to estimate uncertainty in each bin's mean.
 Fit Gaussian Process regression to those means using their estimated variances.
 
-Limitations: the GP fit is not a live game-state model. 
+Limitations: the GP fit is not a live game-state model.
 MoneyPuck XG model can change over time.
 
 Aim: separate shot volume and shot quality effects, and describe the shape of the curve.
@@ -36,7 +36,7 @@ WINDOW_MINUTES = np.diff(WINDOW_EDGES) / 60
 # The recent-versus-earlier split is exploratory, not an estimated change point.
 # The 2024-start file is later-season evaluation, never passed to GP fitting.
 # Eras season 2014-2015 to 2021-2022 `early`, 2022-2023, 2023-2024 `recent`, 2024-2025 `validate`.
-    
+
 SEASONS = {
     DATA_DIR / f"shots_{year}.csv": {
         "year": year,
@@ -64,7 +64,7 @@ def assign_bins(times, edges):
         raise ValueError("Times fall outside the analysis window")
     return np.minimum(np.searchsorted(edges, times, side="right") - 1, len(edges) - 2)
 
-#Function that keeps the trailing team's shots in the third period through 18:30 elapsed, 
+#Function that keeps the trailing team's shots in the third period through 18:30 elapsed,
 # and adds analysis identifiers.
 def filter_shots(df, season_year):
     """Return one season's eligible shot rows with analysis identifiers.
@@ -107,7 +107,7 @@ def filter_shots(df, season_year):
     # MoneyPuck shotID can repeat between games, so use the compound key.
     if "shotID" in df and df.duplicated(["game_id", "shotID"]).any():
         raise ValueError("Duplicate (game_id, shotID) in a season")
-    
+
     # Identify who is trailing using the score BEFORE the shot.
     # A goal scored while down two still qualifies, even though it reduces the deficit.
     home_trails = df["homeTeamGoals"] < df["awayTeamGoals"]
@@ -115,6 +115,10 @@ def filter_shots(df, season_year):
     # Record whether the trailing team's goalie is absent.
     # Keep this flag for diagnostics; it does not exclude shots from the sample.
     df["is_goalie_pull"] = np.where(home_trails, df["homeEmptyNet"], df["awayEmptyNet"]).astype(bool)
+    if "homeSkatersOnIce" in df and "awaySkatersOnIce" in df:
+        df["is_5v5"] = ((pd.to_numeric(df["homeSkatersOnIce"], errors="raise") == 5)
+                        & (pd.to_numeric(df["awaySkatersOnIce"], errors="raise") == 5)
+                        & ~df["is_goalie_pull"])
     # Convert elapsed game time to elapsed third-period time.
     # Subtract the first two periods: 40 minutes = 2400 seconds.
     df["time_in_period"] = df["time"] - 2400
@@ -159,9 +163,9 @@ def load_dataset(seasons=None):
 def cluster_bootstrap(df, group_col="window", n_boot=2000, seed=42, groups=None):
     """Shot-weighted means, resampling whole games within each season.
 
-    Shots from one game share circumstances, resample games to preserve that clustering. 
-    The target is the mean over shots, not an equal-weight mean of games. 
-    
+    Shots from one game share circumstances, resample games to preserve that clustering.
+    The target is the mean over shots, not an equal-weight mean of games.
+
     Returns a per-bin summary (original mean, percentile interval, variance of
     resampled means) and joint draws of shape (n_boot, number_of_bins). The
     target is the mean over selected shots, not an equal-weight mean of games.
@@ -241,7 +245,7 @@ def decompose(df, label):
         agg[f"idx_{col}"] = agg[col] / base if base > 0 else np.nan
     return agg.reset_index()
 
-# Need finner bins to fit a smooth curve
+# Need finer bins to fit a smooth curve
 def make_bins(df, label, n_boot=2000):
     """Build the GP input table: bin mean, sampling variance, and time midpoint.
 
@@ -277,12 +281,12 @@ def normalized_alpha(y, variance):
     # Variances have squared units; do not divide by shot count again here.
     return np.asarray(variance) / scale**2
 
-# GP regression models time as a smooth latent function plus independent residual noise. 
-# The GP is fit to the observed means, not individual shot outcomes. 
+# GP regression models time as a smooth latent function plus independent residual noise.
+# The GP is fit to the observed means, not individual shot outcomes.
 def fit_gp(bins_df, label="", n_restarts=10, noise_bounds=(1e-6, 1.0)):
     """Fit a smooth mean-xG trajectory using each bin's estimated precision.
     Target is the mean over shots in a bin, not individual shot outcomes. The
-    GP is a smooth latent function plus independent residual noise. 
+    GP is a smooth latent function plus independent residual noise.
 
     Input: the table returned by make_bins. Output: a fitted scikit-learn GP.
     Hyperparameters are optimised by marginal likelihood.
@@ -294,11 +298,11 @@ def fit_gp(bins_df, label="", n_restarts=10, noise_bounds=(1e-6, 1.0)):
     # Noisier means need not pull the fitted curve as closely toward themselves.
     # Sampling uncertainty of the observed means, in the normalised y units.
     y = bins_df["mean_xG"].to_numpy()
-    
-    # Estimated uncertainity of the observed means, in the normalised y units.
+
+    # Estimated uncertainty of the observed means, in the normalised y units.
     alpha = normalized_alpha(y, bins_df["se_sq"].to_numpy())
 
-    #Kernerl: Smooth signal + additional independent residual variance. WhiteKernel complements 
+    # Kernel: Smooth signal + additional independent residual variance. WhiteKernel complements
     # the supplied bootstrap variance.
     # The Matern length scale controls how quickly the curve can vary in time.
     # Smoothing is intentional: the fit need not pass through every bin mean.
@@ -338,6 +342,22 @@ def predictive_std(gp, latent_std, sampling_variance):
     # Three terms: latent variance + residual variance + held-out mean variance.
     extra_noise = gp.kernel_.k2.noise_level * gp._y_train_std**2
     return np.sqrt(latent_std**2 + extra_noise + np.asarray(sampling_variance))
+
+
+def gp_hyperparameters(gp):
+    """Extract fitted kernel parameters in both normalized and original xG units."""
+    y_var = float(gp._y_train_std**2)
+    const_norm = float(gp.kernel_.k1.k1.constant_value)
+    length_scale_s = float(gp.kernel_.k1.k2.length_scale)
+    noise_norm = float(gp.kernel_.k2.noise_level)
+    return {
+        "constant_norm": const_norm,
+        "signal_std_xG": float(np.sqrt(const_norm * y_var)),
+        "length_scale_s": length_scale_s,
+        "noise_level_norm": noise_norm,
+        "residual_std_xG": float(np.sqrt(noise_norm * y_var)),
+        "log_marginal_likelihood": float(gp.log_marginal_likelihood_value_),
+    }
 
 
 def derivative_ratio_samples(gp, times, n_samples=1000, seed=42):

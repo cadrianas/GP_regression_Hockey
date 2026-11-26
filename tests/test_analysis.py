@@ -15,8 +15,8 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 
 from src.analysis import (SEASONS, WINDOW_EDGES, assign_bins, cluster_bootstrap,
                           decompose, derivative_ratio_samples, filter_shots, fit_gp,
-                          latent_posterior, load_dataset, make_bins, normalized_alpha,
-                          predictive_std)
+                          gp_hyperparameters, latent_posterior, load_dataset, make_bins,
+                          normalized_alpha, predictive_std)
 from src.decomposition import compare_samples
 from src.diagnostic_shot_location import goalie_summary
 from src.results import baseline_predictions
@@ -59,6 +59,7 @@ class SampleTests(unittest.TestCase):
                               raw_shot(homeTeamGoals=2, awayTeamGoals=0, teamCode="B", awayEmptyNet=1)])
         result = filter_shots(shots, 2023)
         self.assertEqual(result.is_goalie_pull.tolist(), [False, True, True])
+        self.assertEqual(result.is_5v5.tolist(), [False, False, False])
         self.assertAlmostEqual(goalie_summary(result).goalie_pull_shot_pct.iloc[0], 200 / 3)
 
     def test_boundaries_and_only_trailing_shots(self):
@@ -164,6 +165,13 @@ class ModelTests(unittest.TestCase):
         expected = np.diag(cov) + noise + .001
         np.testing.assert_allclose(predictive_std(gp, np.sqrt(np.diag(cov)), .001)**2, expected)
 
+    def test_gp_hyperparameters_extracts_positive_scales(self):
+        gp = fit_gp(self.bins, n_restarts=0)
+        params = gp_hyperparameters(gp)
+        self.assertGreater(params["length_scale_s"], 0)
+        self.assertGreater(params["signal_std_xG"], 0)
+        self.assertTrue(np.isfinite(params["log_marginal_likelihood"]))
+
     def test_derivative_uncertainty_with_constant_marginal_variance(self):
         t = np.linspace(0, 100, 30)
         cov = .0001 * np.exp(-((t[:, None] - t[None, :]) / 30)**2)
@@ -188,7 +196,8 @@ class EntryPointTests(unittest.TestCase):
         with patch("pandas.read_csv", side_effect=AssertionError("Import read data")):
             with contextlib.redirect_stdout(io.StringIO()) as output:
                 for name in ["GP_regression", "decomposition", "diagnostic_shot_location",
-                             "empty_net_frequency", "results", "Diagnostic", "noise_sensitivity"]:
+                             "empty_net_frequency", "results", "Diagnostic", "noise_sensitivity",
+                             "talk_sensitivity"]:
                     importlib.reload(importlib.import_module("src." + name))
             self.assertEqual(output.getvalue(), "")
 
