@@ -43,12 +43,24 @@ The constant kernel scales the size of variation in the curve. The added white-n
 
 Across the 43,094 pooled training shots (`6,026` games), mean `xGoal` per shot increases from `0.06174` in `0–5 min` to `0.08062` in `15–18:30 min` (`+30.6%`), while shot volume per sampled game per clock-window minute increases by `+7.4%` (`0.3804` to `0.4084`).
 
-Stratifying by manpower state in `Results/corrected/talk/manpower_sensitivity.csv` shows that this late-period jump in shot quality comes from pulled-goalie and special-teams situations before the `18:30` cutoff:
+The manpower breakdown in `Results/corrected/talk/manpower_sensitivity.csv` shows that the late-period increase disappears when shots with the trailing team’s goalie absent are excluded:
 * **All situations:** Mean `xGoal` rises `+26.8%` (`0.06059` to `0.07685`) in `early` and `+42.5%` (`0.06563` to `0.09352`) in `recent`.
 * **Goalie in net:** Mean `xGoal` changes by `-3.9%` (`0.06057` to `0.05821`) in `early` and `-11.3%` (`0.06506` to `0.05768`) in `recent`.
 * **5v5 only:** Mean `xGoal` changes by `-2.2%` (`0.05450` to `0.05330`) in `early` and `-9.5%` (`0.06121` to `0.05540`) in `recent`.
 
 On the held-out `2024–25` season (`Results/corrected/model_comparison/model_comparison.csv`), the `recent`-era GP (`length_scale = 318.1 s`) achieves an RMSE of `0.00734` with `17/19` bins inside its nominal 95% prediction intervals, compared with `0.01142` for the `recent` exponential fit, `0.01173` for linear, `0.01440` for constant, and `0.01117` for the `early`-era GP (`length_scale = 175.0 s`). Shifting the `recent`-era start season in `Results/corrected/talk/era_boundary_sensitivity.csv` gives higher `2024–25` RMSE for `2019–20` (`0.00825`), `2020–21` (`0.00776`), `2021–22` (`0.00757`), and `2023–24` (`0.00784`).
+
+## What the results mean
+
+Taken together, the training seasons show better chances per shot late in the period. The change from 0.06174 to 0.08062 xGoal means that 100 shots with those average qualities would carry roughly 6.2 and 8.1 expected goals, respectively, according to MoneyPuck’s model. These are model estimates of chance quality. The 30.6% increase does not mean teams scored 30.6% more goals or became that much more likely to complete a comeback.
+
+The game situation matters to that result. Once shots taken with the trailing team’s goalie absent are removed, the late-period increase disappears in both eras. The five-on-five averages also decline slightly in the early era and more in the recent era. These descriptive comparisons weaken the original idea that running out of time generally leads teams to create better shots. They suggest that the pooled rise depends heavily on the situations in which those late shots are taken. The analysis does not isolate the effect of pulling the goalie, and the percentage changes alone do not establish whether the within-group declines exceed sampling uncertainty.
+
+There is also a difference between seasons. The recent-era curve is generally higher, and it predicts the 2024–25 bin averages more accurately than the early-era curve. That supports using recent seasons to describe this held-out season. It leaves the reason for the difference open: the analysis cannot attribute it to analytics adoption or a deliberate change in coaching strategy.
+
+The recent-era GP’s RMSE of 0.00734 measures prediction error in mean xGoal per shot across the held-out time bins. Lower values indicate closer predictions. The GP does better than the fitted simpler curves on this comparison, but two of the 19 bin averages still fall outside its nominal 95% prediction intervals. With one held-out season and related observations across time, that result gives limited evidence about how reliably the intervals would cover future seasons.
+
+Starting the recent era at 2022–23 gives the lowest error among the boundaries examined. Because those boundaries were compared using the same held-out season, this is an exploratory finding. A further season would help check whether that choice continues to work. It does not establish a precise date when NHL tactics changed.
 
 ## Running the project
 
