@@ -22,6 +22,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import ConstantKernel, Matern, WhiteKernel
 
 from src.paths import DATA_DIR
+from src.config import StudyConfig, add_config_arguments, config_from_args
 
 # Using time bins to describe the average shot quality at different points in the third period.
 # Elapsed third-period time: 18:30 = 1:30 remaining in a 20-minute period.
@@ -34,18 +35,9 @@ WINDOW_MIDPOINTS = (WINDOW_EDGES[:-1] + WINDOW_EDGES[1:]) / 2
 WINDOW_MINUTES = np.diff(WINDOW_EDGES) / 60
 # MoneyPuck's season field and filename use the season's starting year.
 # The recent-versus-earlier split is exploratory, not an estimated change point.
-# The 2024-start file is later-season evaluation, never passed to GP fitting.
-# Eras season 2014-2015 to 2021-2022 `early`, 2022-2023, 2023-2024 `recent`, 2024-2025 `validate`.
+# The configured evaluation season is never passed to GP fitting.
 
-SEASONS = {
-    DATA_DIR / f"shots_{year}.csv": {
-        "year": year,
-        "label": f"{year}-{str(year + 1)[-2:]}",
-        "era": "early" if year <= 2021 else "recent" if year <= 2023 else "validate",
-        "role": "train" if year <= 2023 else "validate",
-    }
-    for year in range(2014, 2025)
-}
+SEASONS = StudyConfig().seasons()
 EARLY_SEASONS = [m["label"] for m in SEASONS.values() if m["era"] == "early"]
 RECENT_SEASONS = [m["label"] for m in SEASONS.values() if m["era"] == "recent"]
 REQUIRED_COLUMNS = {
@@ -140,8 +132,7 @@ def filter_shots(df, season_year):
 
 
 def load_dataset(seasons=None):
-    """Require the full requested sample; never silently skip a season.
-    Eras season 2014-2015 to 2021-2022 `early`, 2022-2023, 2023-2024 `recent`, 2024-2025 `validate`. """
+    """Require the full requested sample; never silently skip a season."""
     seasons = SEASONS if seasons is None else seasons
     missing = [str(p) for p in seasons if not Path(p).is_file()]
     if missing:
@@ -409,13 +400,15 @@ def run_inputs(description, subdirectory):
     from src.paths import RESULTS_DIR
 
     parser = argparse.ArgumentParser(description=description)
+    add_config_arguments(parser)
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
     parser.add_argument("--output-dir", type=Path, default=RESULTS_DIR / subdirectory)
     args = parser.parse_args()
-    seasons = {args.data_dir / p.name: meta for p, meta in SEASONS.items()}
     try:
-        full = load_dataset(seasons)
-    except (FileNotFoundError, ValueError) as exc:
+        config = config_from_args(args)
+        full = load_dataset(config.seasons(args.data_dir))
+        full.attrs["evaluation_status"] = config.evaluation_status
+    except (OSError, ValueError, TypeError) as exc:
         parser.exit(2, f"{exc}\n")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     return full, args.output_dir

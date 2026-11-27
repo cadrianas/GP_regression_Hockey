@@ -12,6 +12,7 @@ import pandas as pd
 from scipy.optimize import curve_fit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from src.config import sample_labels
 from src.analysis import (run_inputs, make_bins, fit_gp, predict_latent,
                           predictive_std, derivative_ratio_samples, PULL_CUTOFF)
 
@@ -66,6 +67,8 @@ def analyze(full, output):
     it does not fit the earlier curves. This is not a live game-state model.
     """
     # Build evaluation observations separately, before fitting either era.
+    labels = sample_labels(full)
+    evaluation = labels["validate"]
     valid = make_bins(full[full.era == "validate"], "validate")
     rows = []
     figdir = output / "figures"
@@ -100,8 +103,8 @@ def analyze(full, output):
         # Gaps from the lines describe prediction discrepancies; this plot alone
         # cannot distinguish underfitting from sampling variation or season shifts.
         # Assess underfitting with training fit/residuals as well as later errors.
-        ax.scatter(valid.midpoint, valid.mean_xG, color="black", label="2024–25 averages")
-        ax.set(xlabel="Seconds into third period", ylabel="Average shot quality (xG per shot)", title=f"Predicting 2024–25 from {era} seasons")
+        ax.scatter(valid.midpoint, valid.mean_xG, color="black", label=f"{evaluation} averages")
+        ax.set(xlabel="Seconds into third period", ylabel="Average shot quality (xG per shot)", title=f"Predicting {evaluation} from {era} seasons")
         ax.legend(fontsize=8)
         fig.tight_layout()
         fig.savefig(figdir / f"model_comparison_{era}.png", dpi=150)

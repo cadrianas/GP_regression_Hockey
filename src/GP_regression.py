@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from src.config import sample_labels
 from src.analysis import (PULL_CUTOFF, make_bins, fit_gp, predict_latent,
                           predictive_std, run_inputs)
 
@@ -18,6 +19,8 @@ from src.analysis import (PULL_CUTOFF, make_bins, fit_gp, predict_latent,
 def analyze(full, output):
     """Save fine-bin data, latent curves, and later-season prediction checks."""
     # Build observations for all three roles, but fit models on training eras only.
+    labels = sample_labels(full)
+    evaluation = labels["validate"]
     bins = {era: make_bins(full[full.era == era], era) for era in ["early", "recent", "validate"]}
     models = {era: fit_gp(bins[era], era) for era in ["early", "recent"]}
     for era, table in bins.items():
@@ -27,7 +30,7 @@ def analyze(full, output):
     # Query points make a smooth display. They are not 500 training observations.
     grid = np.linspace(0, PULL_CUTOFF, 500)
     curves, validations = {}, []
-    titles = {"early": "2014–15 through 2021–22", "recent": "2022–23 through 2023–24"}
+    titles = labels
     for era, model in models.items():
         # Function uncertainty excludes new-observation white noise. The band
         # conditions on fitted hyperparameters and supplied sampling variances.
@@ -57,7 +60,7 @@ def analyze(full, output):
         ax.errorbar(bins[era].midpoint, bins[era].mean_xG,
                     yerr=1.96 * np.sqrt(bins[era].se_sq), fmt="o", label="Training averages with uncertainty")
         ax.errorbar(valid.midpoint, valid.mean_xG, yerr=1.96 * np.sqrt(valid.se_sq),
-                    fmt="^", label="2024–25 averages with uncertainty")
+                    fmt="^", label=f"{evaluation} averages with uncertainty")
         ax.set(xlabel="Seconds into third period", ylabel="Average shot quality (xG per shot)",
                title=f"Shot quality over time: {titles[era]}", xlim=(0, PULL_CUTOFF))
         ax.legend(fontsize=8)

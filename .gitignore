@@ -35,3 +35,5 @@ htmlcov/
 *~
 
 gaussian_processes_lecture_notes.md
+# Separate local analysis runs
+/runs/

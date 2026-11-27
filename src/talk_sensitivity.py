@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from src.config import sample_labels
 from src.analysis import (PULL_CUTOFF, WINDOW_LABELS, decompose, fit_gp,
                           gp_hyperparameters, make_bins, predict_latent,
                           predictive_std, run_inputs)
@@ -65,6 +66,8 @@ def evaluate_stratum(train_df, valid_df, era_label, stratum_label):
 
 def analyze(full, output):
     """Run sensitivity analyses and save talk-ready tables and figures."""
+    labels = sample_labels(full)
+    evaluation = labels["validate"]
     figdir = output / "figures"
     figdir.mkdir(exist_ok=True)
     plt.rcParams.update({"font.size": 11, "axes.titlesize": 13, "axes.labelsize": 11})
@@ -105,7 +108,9 @@ def analyze(full, output):
     train_pool["start_year"] = train_pool["season"].map(_season_start_year)
     valid_all_bins = make_bins(valid_all, "validate")
     boundary_rows = []
-    for start_year in [2019, 2020, 2021, 2022, 2023]:
+    recent_start = int(full.loc[full.era == "recent", "season"].min()[:4])
+    available_years = sorted(train_pool.start_year.unique())
+    for start_year in [y for y in available_years if y >= recent_start - 3]:
         sub = train_pool[train_pool["start_year"] >= start_year]
         tr_bins = make_bins(sub, f"since_{start_year}")
         gp = fit_gp(tr_bins, f"since_{start_year}")
@@ -116,7 +121,7 @@ def analyze(full, output):
         params = gp_hyperparameters(gp)
         boundary_rows.append({
             "recent_start_year": start_year,
-            "recent_label": f"{start_year}-{str(start_year + 1)[-2:]} to 2023-24",
+            "recent_label": f"{start_year}-{str(start_year + 1)[-2:]} to {train_pool.season.max()}",
             "n_seasons": int(sub["season"].nunique()),
             "n_shots": int(len(sub)),
             "length_scale_s": params["length_scale_s"],
@@ -128,7 +133,7 @@ def analyze(full, output):
     boundary_df.to_csv(output / "era_boundary_sensitivity.csv", index=False)
 
     # 3. Slide 1: Volume vs. Quality decomposition
-    pooled_decomp = decompose(train_pool, "2014-15 through 2023-24")
+    pooled_decomp = decompose(train_pool, f"{full.loc[full.role == 'train', 'season'].min()} through {full.loc[full.role == 'train', 'season'].max()}")
     vol_pct = 100.0 * (pooled_decomp["idx_shots_per_game_per_window_minute"] - 1.0)
     qual_pct = 100.0 * (pooled_decomp["idx_mean_xG"] - 1.0)
     x = np.arange(len(WINDOW_LABELS))
@@ -154,7 +159,7 @@ def analyze(full, output):
     fig.savefig(figdir / "slide1_volume_vs_quality.png", dpi=300)
     plt.close(fig)
 
-    # 4. Slide 2: Recent-era GP fit + 2024-25 validation
+    # 4. Slide 2: Recent-era GP fit and held-out season
     grid = np.linspace(0, PULL_CUTOFF, 500)
     gp_recent = recent_gps["all_situations"]
     tr_b, va_b = recent_bins["all_situations"]
@@ -165,24 +170,24 @@ def analyze(full, output):
     ax.fill_between(grid, mean - 1.96 * std, mean + 1.96 * std, color="#1f77b4", alpha=0.18,
                     label="95% uncertainty at each time")
     ax.errorbar(tr_b.midpoint, tr_b.mean_xG, yerr=1.96 * np.sqrt(tr_b.se_sq),
-                fmt="o", color="#1f77b4", alpha=0.75, markersize=5, label="2022–23 and 2023–24 averages")
+                fmt="o", color="#1f77b4", alpha=0.75, markersize=5, label=f"{labels['recent']} averages")
     ax.scatter(va_b.midpoint, va_b.mean_xG, color="#d62728", marker="^", s=55, zorder=5,
-               label="2024–25 averages")
+               label=f"{evaluation} averages")
     ax.text(0.03, 0.94,
             f"Fitted time scale: {recent_row.length_scale_s:.0f} s\n"
-            f"2024–25 prediction error (RMSE): {recent_row.val_rmse:.5f}\n"
-            f"Within 95% prediction intervals: {int(round(recent_row.val_coverage_pct * 19 / 100))}/19 averages",
+            f"{evaluation} prediction error (RMSE): {recent_row.val_rmse:.5f}\n"
+            f"Within 95% prediction intervals: {int(round(recent_row.val_coverage_pct * len(va_b) / 100))}/{len(va_b)} averages",
             transform=ax.transAxes, va="top", fontsize=9.5,
             bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#cccccc", alpha=0.9))
     ax.set(xlim=(0, PULL_CUTOFF), xlabel="Seconds into third period", ylabel="Average shot quality (xG per shot)",
-           title="Comparing the recent-season fit with 2024–25")
+           title=f"Comparing the recent-season fit with {evaluation}")
     ax.legend(frameon=True, loc="upper left", bbox_to_anchor=(0.02, 0.73), fontsize=8)
     _style_axis(ax)
     fig.tight_layout()
     fig.savefig(figdir / "slide2_gp_recent_fit.png", dpi=300)
     plt.close(fig)
 
-    # 5. Slide 3: Model comparison on held-out 2024-25 RMSE
+    # 5. Slide 3: Model comparison on held-out RMSE
     comp_rows = []
     for era in ["early", "recent"]:
         tr_e = make_bins(full[full.era == era], era)
@@ -201,16 +206,16 @@ def analyze(full, output):
     fig, ax = plt.subplots(figsize=(8.5, 4.5))
     early_vals = [comp_df[(comp_df.era == "early") & (comp_df.model == m)].rmse.iloc[0] for m in models_order]
     recent_vals = [comp_df[(comp_df.era == "recent") & (comp_df.model == m)].rmse.iloc[0] for m in models_order]
-    ax.barh(y_pos + h / 2, early_vals, h, label="Fitted to 2014–15 through 2021–22", color="#9ecae1")
-    ax.barh(y_pos - h / 2, recent_vals, h, label="Fitted to 2022–23 and 2023–24", color="#1f77b4")
+    ax.barh(y_pos + h / 2, early_vals, h, label=f"Fitted to {labels['early']}", color="#9ecae1")
+    ax.barh(y_pos - h / 2, recent_vals, h, label=f"Fitted to {labels['recent']}", color="#1f77b4")
     for idx, (ev, rv) in enumerate(zip(early_vals, recent_vals)):
         ax.text(ev + 0.0002, idx + h / 2, f"{ev:.5f}", va="center", fontsize=8.5)
         ax.text(rv + 0.0002, idx - h / 2, f"{rv:.5f}", va="center", fontsize=8.5, fontweight="bold")
     ax.set_yticks(y_pos)
     ax.set_yticklabels(models_order)
     ax.invert_yaxis()
-    ax.set_xlabel("2024–25 prediction error (RMSE; lower is better)")
-    ax.set_title("Which model predicts 2024–25 more accurately?")
+    ax.set_xlabel(f"{evaluation} prediction error (RMSE; lower is better)")
+    ax.set_title(f"Which model predicts {evaluation} more accurately?")
     ax.set_xlim(0, max(early_vals) * 1.2)
     ax.legend(frameon=False, loc="lower right", fontsize=8)
     _style_axis(ax)
@@ -235,12 +240,12 @@ def analyze(full, output):
     _style_axis(ax1)
 
     ax2.plot(boundary_df.recent_start_year, boundary_df.val_rmse, marker="o", color="#1f77b4", linewidth=2.2)
-    chosen = boundary_df[boundary_df.recent_start_year == 2022].iloc[0]
+    chosen = boundary_df[boundary_df.recent_start_year == recent_start].iloc[0]
     ax2.scatter([chosen.recent_start_year], [chosen.val_rmse], color="#d62728", s=90, zorder=5,
-                label="Current starting season: 2022–23")
+                label=f"Current starting year: {recent_start}")
     ax2.set_xticks(boundary_df.recent_start_year)
     ax2.set_xticklabels([f"{y}-{str(y + 1)[-2:]}" for y in boundary_df.recent_start_year])
-    ax2.set(xlabel="First season used for the recent fit", ylabel="2024–25 prediction error (RMSE)",
+    ax2.set(xlabel="First season used for the recent fit", ylabel=f"{evaluation} prediction error (RMSE)",
             title="How the starting season affects predictions")
     ax2.legend(frameon=False, loc="upper right", fontsize=9)
     _style_axis(ax2)

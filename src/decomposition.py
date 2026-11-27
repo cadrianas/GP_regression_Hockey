@@ -12,6 +12,7 @@ import pandas as pd
 from scipy import stats
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from src.config import sample_labels
 from src.analysis import (WINDOW_LABELS, WINDOW_MIDPOINTS, cluster_bootstrap,
                           decompose, run_inputs)
 
@@ -70,11 +71,13 @@ def season_tests(train):
 
 def analyze(full, output):
     """Return no model: this entry point saves descriptive tables and figures."""
+    labels = sample_labels(full)
+    evaluation = labels["validate"]
     train = full[full.role == "train"]
     valid = full[full.role == "validate"]
     # Inspect each season as well as the pool; pooling can hide temporal variation.
     tables = pd.concat([decompose(df, label) for label, df in train.groupby("season")], ignore_index=True)
-    pooled = decompose(train, "2014-15 through 2023-24")
+    pooled = decompose(train, f"{full.loc[full.role == 'train', 'season'].min()} through {full.loc[full.role == 'train', 'season'].max()}")
     comparison = compare_samples(train, valid)
     tables.to_csv(output / "decomposition_by_season.csv", index=False)
     pooled.to_csv(output / "decomposition_pooled.csv", index=False)
@@ -129,7 +132,7 @@ def analyze(full, output):
                         comparison[prefix + "_ci_hi"].to_numpy(), alpha=.2)
     ax.set_xticks(x, WINDOW_LABELS)
     ax.set_ylabel("Average shot quality (xG per shot)")
-    ax.set_title("Training seasons compared with 2024–25")
+    ax.set_title(f"Training seasons compared with {evaluation}")
     ax.legend()
     fig.tight_layout()
     fig.savefig(figdir / "fig5_validation.png", dpi=150)

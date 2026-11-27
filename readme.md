@@ -6,7 +6,7 @@ This repository examines how expected goals per shot (`xGoal` from MoneyPuck) ch
 
 ## Study sample and data checks
 
-The scripts read MoneyPuck shot-level CSVs (`shots_2014.csv` through `shots_2024.csv`) from `DATA_DIR` in `src/paths.py`. Season `2025–26` (`shots_2025.csv`) sits outside the configured study window.
+The published results below use MoneyPuck shot-level CSVs from `2014–15` through `2024–25`. The default split is saved in `configs/study.json`. You can choose different seasons when running the project; each run saves its own report and figures.
 
 `filter_shots` in `src/analysis.py` keeps unblocked shot attempts taken by the trailing team when the score difference is two goals in period 3, from `0:00` through `18:30` elapsed (`1110` seconds). It checks column presence, integer-valued scores and periods, `xGoal` bounds in `[0, 1]`, valid team codes, and unique `(game_id, shotID)` pairs within each season.
 
@@ -98,29 +98,67 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-Download the `2014` through `2024` shot CSVs from [MoneyPuck](https://moneypuck.com/data.htm) into `Data/` (or pass `--data-dir` to any script). Run the unit tests and all analysis scripts together with:
+Run the tests, download any missing seasons, and generate the analysis:
 
 ```bash
 ./run_all.sh
 ```
 
-Or run individual scripts:
+The first run downloads the published shot archives from [MoneyPuck](https://moneypuck.com/data.htm) into `Data/`. Later runs reuse those files. Results go into a new folder under `runs/`, with a `summary.md`, plots, and tables. The saved configuration and manifest record the input file hashes, download times when known, and software versions. The figures and findings above remain the published study results.
+
+### Choose a season
+
+Season years refer to the year the season starts: `2025` means `2025–26`. To evaluate that season using the original training groups:
 
 ```bash
-python -m unittest discover -s tests -v
-python src/decomposition.py --output-dir Results/corrected/decomposition
-python src/GP_regression.py --output-dir Results/corrected/gp
-python src/diagnostic_shot_location.py --output-dir Results/corrected/diagnostics
-python src/results.py --output-dir Results/corrected/model_comparison
-python src/noise_sensitivity.py --output-dir Results/corrected
-python src/talk_sensitivity.py --output-dir Results/corrected/talk
+./run_all.sh --evaluation-season 2025 --evaluation-status complete --refresh-evaluation
 ```
 
-To inspect local CSV availability without requiring the full 11-season sample:
+For a season still in progress, use `--evaluation-status season-to-date`. That setting downloads a fresh evaluation file each time and labels the plots as season-to-date. There must be a published MoneyPuck archive and enough qualifying shots to fit and evaluate the models. A season that has barely started may not have enough data.
+
+You can also move the training window:
 
 ```bash
+./run_all.sh --train-start 2018 --recent-start 2023 --train-end 2024 \
+  --evaluation-season 2025 --evaluation-status complete --refresh-evaluation
+```
+
+Training ends before the evaluation season. `recent-start` divides the training years into the early and recent groups. The evaluation season is left out of fitting. Comparing different boundaries against that same season is exploratory, as in the published study.
+
+The default settings live in `configs/study.json`. Pass `--config path/to/config.json` to use another configuration, or override individual values on the command line. Changing the evaluation year without specifying its status labels it as a `snapshot`. Choosing `complete` is your declaration; the downloader does not check the league schedule to certify completeness.
+
+To download files without running the models:
+
+```bash
+python -m src.download --evaluation-season 2025 --refresh-evaluation
+```
+
+To rerun using only files already on disk:
+
+```bash
+./run_all.sh --offline
+```
+
+Offline mode never refreshes data, even with `season-to-date` selected. Check the manifest for the snapshot used. `--data-dir` selects another data folder; `--output-dir` selects a new results folder. An existing output folder is rejected to avoid mixing runs. A refreshed CSV is validated before replacing the cached file. If its contents changed, the previous file is kept under `Data/snapshots/` locally.
+
+`python -m src.pipeline` runs the main analysis without the tests or sensitivity checks. Add `--sensitivities` to include the additional checks. Individual scripts still accept the season options, but read local data without downloading it:
+
+```bash
+python src/GP_regression.py --evaluation-season 2025 --output-dir runs/gp-2025
 python src/Diagnostic.py
 ```
+
+### Run on GitHub
+
+Once `.github/workflows/run-analysis.yml` is on the repository's default branch, open **Actions → Run analysis → Run workflow**. Choose the evaluation season and training years, then start the run. In a fork, enable Actions first if GitHub asks.
+
+The workflow installs Python, runs the tests, and downloads the selected data. It refreshes the evaluation file by default and caches the CSVs for later runs. When it finishes, the run page shows the model comparison. Download the `hockey-analysis-…` artifact from that page to get the figures and full report. Artifacts are kept for 30 days; save a copy if you need them longer. Failed analysis runs also upload the available logs and manifest.
+
+The workflow does not update the published README results. Each artifact records the files used, but does not include the raw CSVs. Keep a local copy of those files if you need to reproduce a result after MoneyPuck updates its downloads.
+
+### Data source
+
+The downloader uses MoneyPuck's published season archives. This keeps the `xGoal` values used by the current model; NHL play-by-play data alone would require a separate way to estimate shot quality. MoneyPuck allows non-commercial use with attribution. See its [data page](https://moneypuck.com/data.htm) for the terms and available seasons.
 
 ## Repository layout
 
@@ -128,14 +166,19 @@ python src/Diagnostic.py
 | --- | --- |
 | `src/analysis.py` | Data validation, filtering, cluster bootstrap, and GP helpers |
 | `src/decomposition.py` | Window summaries, season comparisons, and bootstrap checks |
-| `src/GP_regression.py` | Era-specific GP fits and `2024–25` validation plots |
+| `src/GP_regression.py` | Era-specific GP fits and held-out season plots |
 | `src/diagnostic_shot_location.py` | Shot distance, shot type, and goalie-pull diagnostics |
 | `src/results.py` | Parametric baseline comparisons and derivative-ratio intervals |
 | `src/noise_sensitivity.py` | Sensitivity check across `WhiteKernel` lower bounds (`1e-10` to `1e-4`) |
 | `src/talk_sensitivity.py` | Manpower stratification, era-boundary checks, hyperparameters, and slide figures |
 | `src/paths.py` | Shared data and output paths |
+| `configs/study.json` | Default training split and evaluation season |
+| `src/download.py` | Published archive downloads, validation, and local cache |
+| `src/pipeline.py` | Analysis runner and per-run reports |
+| `.github/workflows/run-analysis.yml` | Manual GitHub workflow with season inputs |
+| `runs/` | Local run outputs, excluded from Git |
 | `Results/corrected/` | Current tables, figures, `summary.md`, and `run_manifest.json` |
-| `tests/test_analysis.py` | Unit tests for filtering, weighting, GP scaling, and CLI entry points |
+| `tests/` | Tests for the analysis, season configuration, and downloader |
 | `run_all.sh` | Runner for unit tests and all analysis scripts |
 | `requirements.txt` | Pinned Python dependencies |
 
